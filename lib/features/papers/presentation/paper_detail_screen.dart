@@ -90,7 +90,9 @@ class _Body extends ConsumerWidget {
         const SizedBox(height: 4),
         Text(
           [
-            paper.arxivId,
+            // An imported paper has no arXiv id; the row should shrink rather
+            // than print the word "null".
+            ?paper.arxivId,
             if (published != null) DateFormat.yMMM().format(published),
             if (paper.categories.isNotEmpty) paper.categories,
           ].join('  ·  '),
@@ -204,9 +206,17 @@ class _PdfSectionState extends ConsumerState<_PdfSection> {
     // Chrome that cannot download, so it answers a PDF URL with "Can't download
     // link". This is safe from bouncing back into Cairn because the arxiv.org
     // intent filter is scoped to /abs.
+    // An imported paper has no URL to fall back to — the file on disk is the
+    // only copy there has ever been.
+    final url = widget.paper.pdfUrl;
+    if (url == null) {
+      _tell('Install a PDF reader to open this file.');
+      return;
+    }
+
     _tell('No PDF reader installed. Trying the browser instead.');
     final opened = await launchUrl(
-      Uri.parse(widget.paper.pdfUrl),
+      Uri.parse(url),
       mode: LaunchMode.externalApplication,
     );
     if (!opened) {

@@ -7,6 +7,37 @@ import '../../../core/database/database.dart';
 import '../../../core/network/arxiv_api.dart';
 import '../data/paper_repository.dart';
 
+/// Asks what an imported PDF should be called.
+///
+/// A file name is the only clue a PDF carries, so it seeds the field rather than
+/// becoming the title outright — filenames are rarely what you would call a paper.
+Future<String?> showImportTitleDialog(BuildContext context, String suggestion) {
+  final controller = TextEditingController(text: suggestion);
+  return showDialog<String>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('What is this paper called?'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLines: null,
+        textCapitalization: TextCapitalization.sentences,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(dialogContext).pop(controller.text.trim()),
+          child: const Text('Import'),
+        ),
+      ],
+    ),
+  );
+}
+
 /// Adds a paper from a pasted id, URL, or citation string.
 ///
 /// Looking a paper up and keeping it are two separate steps: the sheet shows
@@ -146,9 +177,16 @@ class _AddPaperSheetState extends ConsumerState<_AddPaperSheet> {
                 )
               : const Text('Look up on arXiv'),
         ),
+        const SizedBox(height: 12),
+        Text(
+          'Not on arXiv? Open the PDF in your file manager and share it into '
+          'Cairn.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
       ],
     );
   }
+
 
   Widget _buildPreview(BuildContext context) {
     final preview = _preview!;

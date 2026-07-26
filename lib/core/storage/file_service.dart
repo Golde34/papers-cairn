@@ -66,6 +66,25 @@ class FileService {
     return relativePath;
   }
 
+  /// Takes a file that already exists on the device into Cairn's storage.
+  ///
+  /// The source is copied rather than renamed: it usually lives on a different
+  /// volume, or is a temporary handed over by the system file picker, and
+  /// `rename` fails across volumes.
+  Future<String> adopt({
+    required File source,
+    required String folderName,
+    required String fileName,
+  }) async {
+    final root = await _root();
+    final directory = Directory(p.join(root.path, folderName));
+    await directory.create(recursive: true);
+
+    final relativePath = p.join(folderName, fileName);
+    await source.copy(p.join(root.path, relativePath));
+    return relativePath;
+  }
+
   Future<void> delete(String relativePath) async {
     final file = await resolve(relativePath);
     if (await file.exists()) await file.delete();
@@ -75,15 +94,15 @@ class FileService {
   /// database is not around to help:
   /// `2103.00020 - Learning Transferable Visual Models - Radford 2021.pdf`
   static String buildFileName({
-    required String arxivId,
     required String title,
     required List<String> authors,
+    String? arxivId,
     DateTime? publishedAt,
   }) {
     final parts = <String>[
       // Pre-2007 ids carry their archive and a slash, e.g. `hep-th/9901001`.
       // Left alone that slash makes this a path, not a file name.
-      _sanitize(arxivId),
+      if (arxivId != null) _sanitize(arxivId),
       _truncate(_sanitize(title), 80),
       if (authors.isNotEmpty)
         [

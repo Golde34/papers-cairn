@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'dart:io';
+
+import '../../../core/database/database.dart';
 import '../../../core/settings/settings_repository.dart';
 import '../../../core/share/share_receiver.dart';
 import '../../boards/presentation/boards_tab.dart';
@@ -20,7 +23,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _tab = 0;
 
-  static const _titles = ['Reading', 'Library', 'Projects', 'Boards'];
+  static const _titles = ['Library', 'Projects', 'Boards'];
 
   @override
   void initState() {
@@ -33,14 +36,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// project picker at share time defeats the point of a one-tap capture.
   void _listenForShares() {
     final receiver = ref.read(shareReceiverProvider);
-    receiver.arxivIds.listen((arxivId) async {
+    receiver.items.listen((item) async {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
+      final repository = ref.read(paperRepositoryProvider);
+
       try {
-        final paper = await ref
-            .read(paperRepositoryProvider)
-            .addFromArxiv(arxivId);
-        if (!mounted) return;
+        final paper = switch (item) {
+          SharedArxivId(:final arxivId) => await repository.addFromArxiv(
+            arxivId,
+          ),
+          // A PDF carries no metadata worth trusting, so the one thing that
+          // matters — what to call it — is asked before anything is written.
+          SharedPdf(:final path, :final suggestedTitle) => await _importShared(
+            repository,
+            path,
+            suggestedTitle,
+          ),
+        };
+
+        if (!mounted || paper == null) return;
         messenger.showSnackBar(
           SnackBar(
             content: Text('Saved: ${paper.title}'),
@@ -58,6 +73,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     receiver.start();
   }
 
+  Future<Paper?> _importShared(
+    PaperRepository repository,
+    String path,
+    String suggestedTitle,
+  ) async {
+    final title = await showImportTitleDialog(context, suggestedTitle);
+    if (title == null || title.isEmpty) return null;
+    return repository.importPdf(source: File(path), title: title);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,17 +98,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: IndexedStack(
         index: _tab,
-        children: const [
-          _ReadingTab(),
-          _LibraryTab(),
-          ProjectsTab(),
-          BoardsTab(),
-        ],
+        children: const [_LibraryTab(), ProjectsTab(), BoardsTab()],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => switch (_tab) {
-          2 => showCreateProjectSheet(context),
-          3 => showCreateBoardSheet(context),
+          1 => showCreateProjectSheet(context),
+          2 => showCreateBoardSheet(context),
           _ => showAddPaperSheet(context),
         },
         child: const Icon(Icons.add),
@@ -92,11 +112,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         selectedIndex: _tab,
         onDestinationSelected: (index) => setState(() => _tab = index),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.auto_stories_outlined),
-            selectedIcon: Icon(Icons.auto_stories),
-            label: 'Reading',
-          ),
           NavigationDestination(
             icon: Icon(Icons.library_books_outlined),
             selectedIcon: Icon(Icons.library_books),
@@ -147,19 +162,29 @@ class _ThemeToggle extends ConsumerWidget {
   }
 }
 
-class _ReadingTab extends ConsumerWidget {
-  const _ReadingTab();
+/// What the library is currently narrowed to.
+///
+/// Replaced a separate Reading tab. One list you can narrow beats two lists you
+/// have to switch between, and it leaves somewhere obvious to look for a paper
+/// that is neither in progress nor top of mind.
+enum _LibraryFilter {
+  all('All'),
+  toRead('To read'),
+  reading('Reading'),
+  done('Done'),
+  unfiled('Unfiled');
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return PaperListView(
-      papers: ref.watch(readingPapersProvider),
-      emptyIcon: Icons.auto_stories_outlined,
-      emptyMessage:
-          'Nothing in progress.\nMark a paper as Reading and it shows up here, '
-          'most recently opened first.',
-    );
-  }
+  const _LibraryFilter(this.label);
+
+  final String label;
+
+  bool matches(Paper paper, Set<int> unfiledIds) => switch (this) {
+    _LibraryFilter.all => true,
+    _LibraryFilter.toRead => paper.status == ReadingStatus.toRead,
+    _LibraryFilter.reading => paper.status == ReadingStatus.reading,
+    _LibraryFilter.done => paper.status == ReadingStatus.done,
+    _LibraryFilter.unfiled => unfiledIds.contains(paper.id),
+  };
 }
 
 /// Every paper, with the unfiled ones marked.
@@ -168,38 +193,82 @@ class _ReadingTab extends ConsumerWidget {
 /// empty for anyone who picks a project while adding, and meanwhile there was
 /// nowhere at all to see the whole library — a filed paper you were not
 /// currently reading could only be reached through its project or by searching.
-class _LibraryTab extends ConsumerWidget {
+class _LibraryTab extends ConsumerStatefulWidget {
   const _LibraryTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LibraryTab> createState() => _LibraryTabState();
+}
+
+class _LibraryTabState extends ConsumerState<_LibraryTab> {
+  _LibraryFilter _filter = _LibraryFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
     final papers = ref.watch(allPapersProvider);
-    final unfiled = {
-      for (final paper in ref.watch(unfiledPapersProvider).value ?? const [])
+    final unfiled = <int>{
+      for (final paper
+          in ref.watch(unfiledPapersProvider).value ?? const <Paper>[])
         paper.id,
     };
 
-    return papers.when(
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => EmptyHint(
-        icon: Icons.error_outline,
-        message: 'Something went wrong: $error',
-      ),
-      data: (items) => items.isEmpty
-          ? const EmptyHint(
-              icon: Icons.library_books_outlined,
-              message:
-                  'Nothing here yet.\nAdd a paper, or share an arXiv link into '
-                  'Cairn from your browser.',
-            )
-          : ListView.separated(
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (_, index) => PaperTile(
-                paper: items[index],
-                unfiled: unfiled.contains(items[index].id),
-              ),
+    return Column(
+      children: [
+        SizedBox(
+          height: 52,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              for (final option in _LibraryFilter.values)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Center(
+                    child: FilterChip(
+                      label: Text(option.label),
+                      selected: _filter == option,
+                      onSelected: (_) => setState(() => _filter = option),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: papers.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (error, _) => EmptyHint(
+              icon: Icons.error_outline,
+              message: 'Something went wrong: $error',
             ),
+            data: (all) {
+              final items = all
+                  .where((paper) => _filter.matches(paper, unfiled))
+                  .toList();
+
+              if (items.isEmpty) {
+                return EmptyHint(
+                  icon: Icons.library_books_outlined,
+                  message: _filter == _LibraryFilter.all
+                      ? 'Nothing here yet.\nAdd a paper, or share an arXiv link '
+                            'into Cairn from your browser.'
+                      : 'No papers under "${_filter.label}".',
+                );
+              }
+
+              return ListView.separated(
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (_, index) => PaperTile(
+                  paper: items[index],
+                  unfiled: unfiled.contains(items[index].id),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

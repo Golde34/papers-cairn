@@ -31,6 +31,8 @@ flutter analyze
 
 - Look a paper up from an arXiv link, id, or citation string, check it is the right one,
   then save it — or share one in from the browser
+- Import a paper that is not on arXiv by sharing its PDF into Cairn from a file manager
+- One library list, narrowed by reading status or by what is still unfiled
 - Group papers into projects, recording why each one belongs there
 - Link papers to each other, recording why they are connected
 - Track reading status and a free-text note on where you stopped

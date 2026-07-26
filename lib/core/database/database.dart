@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -46,6 +46,12 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 5) {
         await m.createTable(settings);
+      }
+      if (from < 6) {
+        // arxivId and pdfUrl become nullable so imported PDFs can be held.
+        // SQLite cannot relax NOT NULL in place, so drift rebuilds the table
+        // and copies the rows across.
+        await m.alterTable(TableMigration(papers));
       }
     },
     beforeOpen: (details) async {

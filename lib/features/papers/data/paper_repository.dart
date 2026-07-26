@@ -133,13 +133,13 @@ class PaperRepository {
         .into(_db.papers)
         .insert(
           PapersCompanion.insert(
-            arxivId: fetched.arxivId,
+            arxivId: Value(fetched.arxivId),
             title: fetched.title,
             authors: fetched.authors.join('; '),
             abstractText: fetched.abstractText,
             categories: Value(fetched.categories.join('; ')),
             publishedAt: Value(fetched.publishedAt),
-            pdfUrl: fetched.pdfUrl,
+            pdfUrl: Value(fetched.pdfUrl),
             addedAt: DateTime.now(),
           ),
         );
@@ -165,7 +165,7 @@ class PaperRepository {
     )..where((p) => p.arxivId.like('$bare%'))).get();
 
     return candidates
-        .where((p) => stripVersion(p.arxivId) == bare)
+        .where((p) => p.arxivId != null && stripVersion(p.arxivId!) == bare)
         .firstOrNull;
   }
 
@@ -259,6 +259,49 @@ class PaperRepository {
     });
   }
 
+  /// Adopts a PDF already on the device — a paper from somewhere other than
+  /// arXiv, downloaded by hand.
+  ///
+  /// The file is taken into Cairn's own storage, because a path into the
+  /// device's downloads is not something the app can rely on still being there.
+  Future<Paper> importPdf({
+    required File source,
+    required String title,
+    int? projectId,
+  }) async {
+    final id = await _db
+        .into(_db.papers)
+        .insert(
+          PapersCompanion.insert(
+            title: title,
+            // Nothing is known beyond the file itself; these are the paper's to
+            // fill in later rather than the importer's to invent.
+            authors: '',
+            abstractText: '',
+            addedAt: DateTime.now(),
+          ),
+        );
+
+    if (projectId != null) await addToProject(id, projectId);
+
+    final relativePath = await _files.adopt(
+      source: source,
+      folderName: await _folderFor(id),
+      fileName: FileService.buildFileName(title: title, authors: const []),
+    );
+
+    await (_db.update(_db.papers)..where((p) => p.id.equals(id))).write(
+      PapersCompanion(relativePath: Value(relativePath)),
+    );
+    return (_db.select(_db.papers)..where((p) => p.id.equals(id))).getSingle();
+  }
+
+  /// The folder a paper's file belongs in: its first project, or the inbox.
+  Future<String> _folderFor(int paperId) async {
+    final projects = await watchProjectsOf(paperId).first;
+    return projects.firstOrNull?.folderName ?? inboxFolderName;
+  }
+
   // --- files ----------------------------------------------------------------
 
   /// Downloads the PDF into the folder of the paper's first project, or the
@@ -271,12 +314,16 @@ class PaperRepository {
       _db.papers,
     )..where((p) => p.id.equals(paperId))).getSingle();
 
-    final projects = await watchProjectsOf(paperId).first;
-    final folderName = projects.firstOrNull?.folderName ?? inboxFolderName;
+    final url = paper.pdfUrl;
+    if (url == null) {
+      // An imported paper has no origin. Its only copy is the one on disk, so
+      // there is nothing to re-download and losing that file is unrecoverable.
+      throw StateError('This paper was imported and has nowhere to download from');
+    }
 
     final relativePath = await _files.download(
-      url: paper.pdfUrl,
-      folderName: folderName,
+      url: url,
+      folderName: await _folderFor(paperId),
       fileName: FileService.buildFileName(
         arxivId: paper.arxivId,
         title: paper.title,

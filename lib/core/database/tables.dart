@@ -6,7 +6,12 @@ class Papers extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   /// arXiv identifier including version, e.g. `2103.00020v1`.
-  TextColumn get arxivId => text().unique()();
+  ///
+  /// Null for a PDF imported from the device. Plenty of worthwhile papers are
+  /// not on arXiv, and refusing to hold them would make the library a partial
+  /// record — the one thing a library must not be. SQLite allows any number of
+  /// NULLs in a unique column, so the constraint still stops real duplicates.
+  TextColumn get arxivId => text().nullable().unique()();
   TextColumn get title => text()();
 
   /// Author names joined by `; `. Never queried individually, so a table would
@@ -17,7 +22,10 @@ class Papers extends Table {
   /// arXiv categories joined by `; `, e.g. `cs.CV; cs.LG`.
   TextColumn get categories => text().withDefault(const Constant(''))();
   DateTimeColumn get publishedAt => dateTime().nullable()();
-  TextColumn get pdfUrl => text()();
+
+  /// Where the PDF can be fetched from. Null for an imported file, which has no
+  /// origin to re-download from — its only copy is the one on disk.
+  TextColumn get pdfUrl => text().nullable()();
 
   /// Path under the documents directory, e.g. `CLIP/2103.00020 - Learning....pdf`.
   /// Null means the PDF has not been downloaded. Relative because iOS moves the

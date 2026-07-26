@@ -186,6 +186,15 @@ container path on every update; an absolute path saved today is a dead path tomo
   `https://arxiv.org/pdf/...` URL to the intent system resolves Cairn ahead of the browser,
   so "open this elsewhere" reopens Cairn. The filter is scoped to `/abs`, and outgoing PDF
   links use `LaunchMode.inAppBrowserView`, which always lands in a browser.
+- **`file_picker` cannot be used on Flutter 3.44.** Version 11 applies the Kotlin Gradle
+  Plugin itself, which the built-in Kotlin pipeline rejects: the build dies on
+  `GeneratedPluginRegistrant.java` failing to see `FilePickerPlugin`. `flutter clean` does
+  not help. Importing therefore goes through the share sheet — an `application/pdf` intent
+  filter — which needs no picker plugin at all.
+- **An imported PDF is a copy; the original stays put.** Android hands a shared file over
+  as a temporary copy and grants no authority over the original, so "move into Cairn" is
+  not something the app can honour without `MANAGE_EXTERNAL_STORAGE` or a MediaStore
+  delete request written against a platform channel.
 - **A device may have no PDF viewer at all.** `OpenFilex.open` returns a result rather than
   throwing, so an unchecked call leaves a button that silently does nothing. Check the
   result and fall back to the copy on arXiv in a browser.

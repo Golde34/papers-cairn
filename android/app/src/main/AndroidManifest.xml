@@ -35,6 +35,15 @@
                 <data android:mimeType="text/plain"/>
             </intent-filter>
 
+            <!-- Sharing a PDF from a file manager imports it. This is how a paper
+                 that is not on arXiv gets into the library. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="application/pdf"/>
+            </intent-filter>
+
             <!-- Opening an arxiv.org abstract page offers Cairn alongside the
                  browser. Scoped to /abs on purpose: claiming /pdf too would make
                  Cairn the handler for its own "open this PDF elsewhere" fallback,
