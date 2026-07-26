@@ -162,17 +162,44 @@ class _ReadingTab extends ConsumerWidget {
   }
 }
 
-class _InboxTab extends ConsumerWidget {
-  const _InboxTab();
+/// Every paper, with the unfiled ones marked.
+///
+/// This replaced an inbox that only listed unfiled papers. The inbox stayed
+/// empty for anyone who picks a project while adding, and meanwhile there was
+/// nowhere at all to see the whole library — a filed paper you were not
+/// currently reading could only be reached through its project or by searching.
+class _LibraryTab extends ConsumerWidget {
+  const _LibraryTab();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PaperListView(
-      papers: ref.watch(unfiledPapersProvider),
-      emptyIcon: Icons.inbox_outlined,
-      emptyMessage:
-          'Inbox is empty.\nPapers shared from the browser land here until you '
-          'file them under a project.',
+    final papers = ref.watch(allPapersProvider);
+    final unfiled = {
+      for (final paper in ref.watch(unfiledPapersProvider).value ?? const [])
+        paper.id,
+    };
+
+    return papers.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, _) => EmptyHint(
+        icon: Icons.error_outline,
+        message: 'Something went wrong: $error',
+      ),
+      data: (items) => items.isEmpty
+          ? const EmptyHint(
+              icon: Icons.library_books_outlined,
+              message:
+                  'Nothing here yet.\nAdd a paper, or share an arXiv link into '
+                  'Cairn from your browser.',
+            )
+          : ListView.separated(
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const Divider(height: 1),
+              itemBuilder: (_, index) => PaperTile(
+                paper: items[index],
+                unfiled: unfiled.contains(items[index].id),
+              ),
+            ),
     );
   }
 }
