@@ -72,6 +72,18 @@ class Strokes extends Table {
   DateTimeColumn get createdAt => dateTime()();
 }
 
+/// Small key-value store for app preferences.
+///
+/// A table rather than a plugin: the database is already here, and one row is
+/// not worth another native dependency.
+class Settings extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
 enum BoardItemKind { text, paper }
 
 /// Something placed on a board that is not ink: a written note, or a paper

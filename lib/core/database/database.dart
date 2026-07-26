@@ -17,6 +17,7 @@ part 'database.g.dart';
     Boards,
     Strokes,
     BoardItems,
+    Settings,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -25,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -42,6 +43,9 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 4) {
         await m.createTable(boardItems);
+      }
+      if (from < 5) {
+        await m.createTable(settings);
       }
     },
     beforeOpen: (details) async {

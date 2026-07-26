@@ -6,13 +6,17 @@ import '../../../core/database/database.dart';
 import '../../papers/data/paper_repository.dart';
 import '../data/board_repository.dart';
 
-/// Backgrounds for notes and paper cards. Dim enough that ink drawn across them
-/// still reads, since the whole point is being able to scribble over the lot.
+/// Accent colours for notes and paper cards.
+///
+/// Used as a stripe down the edge rather than as the card background: a stored
+/// background colour is fixed, and one picked to look right on a dark board turns
+/// into a black slab on a light one. The card itself takes its colour from the
+/// theme, so it follows the toggle.
 const boardItemPalette = <Color>[
-  Color(0xFF2E3A30),
-  Color(0xFF3A3227),
-  Color(0xFF27333A),
-  Color(0xFF3A2B31),
+  Color(0xFF43A047),
+  Color(0xFFF9A825),
+  Color(0xFF1E88E5),
+  Color(0xFFD81B60),
 ];
 
 /// A note or a pinned paper sitting on the board.
@@ -21,10 +25,19 @@ const boardItemPalette = <Color>[
 /// a plain tap opens the thing, and moving requires a long press first. Dragging
 /// straight from a touch would be ambiguous with panning the board.
 class BoardItemView extends ConsumerStatefulWidget {
-  const BoardItemView({super.key, required this.item, required this.boardId});
+  const BoardItemView({
+    super.key,
+    required this.item,
+    required this.boardId,
+    required this.interactive,
+  });
 
   final BoardItem item;
   final int boardId;
+
+  /// False while a drawing tool is selected, when the whole item layer is behind
+  /// an `IgnorePointer` so ink can cross it.
+  final bool interactive;
 
   @override
   ConsumerState<BoardItemView> createState() => _BoardItemViewState();
@@ -56,10 +69,9 @@ class _BoardItemViewState extends ConsumerState<BoardItemView> {
       _drag = Offset.zero;
     });
 
-    if (moved.distance < _tapSlop) {
-      await _showItemMenu();
-      return;
-    }
+    // A long press that never moved is just a long press; the delete badge is
+    // there for removing things.
+    if (moved.distance < _tapSlop) return;
 
     await ref
         .read(boardRepositoryProvider)
@@ -70,27 +82,27 @@ class _BoardItemViewState extends ConsumerState<BoardItemView> {
         );
   }
 
-  Future<void> _showItemMenu() async {
-    final remove = await showModalBottomSheet<bool>(
+  Future<void> _confirmDelete() async {
+    final isPaper = widget.item.kind == BoardItemKind.paper;
+    final remove = await showDialog<bool>(
       context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: Text(
-                widget.item.kind == BoardItemKind.paper
-                    ? 'Take off the board'
-                    : 'Delete this note',
-              ),
-              subtitle: widget.item.kind == BoardItemKind.paper
-                  ? const Text('The paper stays in your library')
-                  : null,
-              onTap: () => Navigator.of(sheetContext).pop(true),
-            ),
-          ],
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isPaper ? 'Take off the board?' : 'Delete this note?'),
+        content: Text(
+          isPaper
+              ? 'The paper stays in your library.'
+              : 'The note and what it says go for good.',
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(isPaper ? 'Remove' : 'Delete'),
+          ),
+        ],
       ),
     );
 
@@ -116,20 +128,49 @@ class _BoardItemViewState extends ConsumerState<BoardItemView> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Transform.translate(
       offset: _drag,
-      child: GestureDetector(
-        onTap: _onTap,
-        onLongPressStart: _onLongPressStart,
-        onLongPressMoveUpdate: _onLongPressMoveUpdate,
-        onLongPressEnd: _onLongPressEnd,
-        child: Opacity(
-          opacity: _dragging ? 0.75 : 1,
-          child: switch (widget.item.kind) {
-            BoardItemKind.text => _NoteCard(item: widget.item),
-            BoardItemKind.paper => _PaperCard(item: widget.item),
-          },
-        ),
+      // Overflow so the delete badge can sit on the card's corner rather than
+      // eating space inside it.
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: _onTap,
+            onLongPressStart: _onLongPressStart,
+            onLongPressMoveUpdate: _onLongPressMoveUpdate,
+            onLongPressEnd: _onLongPressEnd,
+            child: Opacity(
+              opacity: _dragging ? 0.75 : 1,
+              child: switch (widget.item.kind) {
+                BoardItemKind.text => _NoteCard(item: widget.item),
+                BoardItemKind.paper => _PaperCard(item: widget.item),
+              },
+            ),
+          ),
+          // Hidden while a drawing tool is up. Shown but inert would be worse
+          // than absent: a button that ignores taps reads as broken.
+          if (!_dragging && widget.interactive)
+            Positioned(
+              top: -10,
+              right: -10,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _confirmDelete,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: scheme.surfaceContainerHighest,
+                    border: Border.all(color: scheme.outlineVariant),
+                  ),
+                  child: Icon(Icons.close, size: 14, color: scheme.onSurfaceVariant),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -146,11 +187,16 @@ class _NoteCard extends StatelessWidget {
     final empty = item.body.trim().isEmpty;
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       decoration: BoxDecoration(
-        color: Color(item.colorValue),
+        color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+        border: Border(
+          left: BorderSide(color: Color(item.colorValue), width: 4),
+          top: BorderSide(color: scheme.outlineVariant),
+          right: BorderSide(color: scheme.outlineVariant),
+          bottom: BorderSide(color: scheme.outlineVariant),
+        ),
       ),
       child: Text(
         empty ? 'Tap to write…' : item.body,
@@ -180,13 +226,13 @@ class _PaperCard extends ConsumerWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Color(item.colorValue),
+        color: scheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(8),
         border: Border(
-          left: BorderSide(color: scheme.primary, width: 3),
-          top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-          right: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
-          bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+          left: BorderSide(color: Color(item.colorValue), width: 4),
+          top: BorderSide(color: scheme.outlineVariant),
+          right: BorderSide(color: scheme.outlineVariant),
+          bottom: BorderSide(color: scheme.outlineVariant),
         ),
       ),
       child: Column(

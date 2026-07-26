@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/settings/settings_repository.dart';
 import '../../../core/share/share_receiver.dart';
 import '../../boards/presentation/boards_tab.dart';
 import '../../papers/data/paper_repository.dart';
@@ -63,6 +64,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       appBar: AppBar(
         title: Text(_titles[_tab]),
         actions: [
+          const _ThemeToggle(),
           IconButton(
             icon: const Icon(Icons.search),
             onPressed: () => context.push('/search'),
@@ -112,6 +114,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Cycles system → light → dark. Three states rather than a plain switch,
+/// because "follow the device" is a real preference and losing it to a toggle
+/// would be a downgrade for anyone who had it.
+class _ThemeToggle extends ConsumerWidget {
+  const _ThemeToggle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mode = ref.watch(themeModeProvider).value ?? ThemeMode.system;
+
+    final (icon, label, next) = switch (mode) {
+      ThemeMode.system => (
+        Icons.brightness_auto,
+        'Following the device',
+        ThemeMode.light,
+      ),
+      ThemeMode.light => (Icons.light_mode, 'Light', ThemeMode.dark),
+      ThemeMode.dark => (Icons.dark_mode, 'Dark', ThemeMode.system),
+    };
+
+    return IconButton(
+      icon: Icon(icon),
+      tooltip: label,
+      onPressed: () =>
+          ref.read(settingsRepositoryProvider).setThemeMode(next),
     );
   }
 }

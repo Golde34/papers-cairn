@@ -35,8 +35,16 @@ ThemeData buildTheme(Brightness brightness) {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
-    listTileTheme: const ListTileThemeData(
-      titleTextStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+    listTileTheme: ListTileThemeData(
+      // The colour has to be spelled out. Supplying a titleTextStyle replaces
+      // ListTile's default wholesale, and a style with a null colour leaves the
+      // title painting in whatever the ambient default happens to be — which in
+      // light mode is white on white.
+      titleTextStyle: TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+        color: scheme.onSurface,
+      ),
     ),
   );
 }

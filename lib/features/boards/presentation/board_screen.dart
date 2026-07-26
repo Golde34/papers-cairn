@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/database/database.dart';
 import '../../papers/data/paper_repository.dart';
@@ -10,13 +11,27 @@ import 'board_items.dart';
 
 enum BoardTool { pan, pen, eraser }
 
-const _penPalette = <Color>[
-  Color(0xFFE8E8E8),
-  Color(0xFFFFD54F),
-  Color(0xFF81C784),
-  Color(0xFF64B5F6),
-  Color(0xFFF06292),
+/// Sentinel for ink that follows the theme instead of committing to a colour.
+///
+/// A fixed neutral cannot work: near-white ink vanishes on a light board, and
+/// near-black vanishes on a dark one. Strokes stored with this value resolve to
+/// `colorScheme.onSurface` when painted, so a drawing stays readable through a
+/// theme change. Zero is safe as a sentinel because a real colour always carries
+/// an alpha channel and so is never zero.
+const defaultInkColorValue = 0;
+
+/// Mid-toned on purpose — these have to read against both a white board and a
+/// near-black one.
+const _penColorValues = <int>[
+  defaultInkColorValue,
+  0xFFF9A825,
+  0xFF43A047,
+  0xFF1E88E5,
+  0xFFD81B60,
 ];
+
+Color resolveInk(int value, ColorScheme scheme) =>
+    value == defaultInkColorValue ? scheme.onSurface : Color(value);
 
 const _penWidths = <double>[2, 5, 12];
 
@@ -36,14 +51,14 @@ class _DrawnStroke {
     required this.paint,
   });
 
-  factory _DrawnStroke.from(Stroke stroke) {
+  factory _DrawnStroke.from(Stroke stroke, ColorScheme scheme) {
     final points = decodePoints(stroke.pointsJson);
     return _DrawnStroke(
       id: stroke.id,
       points: points,
       path: buildStrokePath(points),
       paint: Paint()
-        ..color = Color(stroke.colorValue)
+        ..color = resolveInk(stroke.colorValue, scheme)
         ..strokeWidth = stroke.width
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round
@@ -130,13 +145,17 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
   final _transform = TransformationController();
   final _live = _LiveStroke();
 
-  BoardTool _tool = BoardTool.pen;
-  Color _color = _penPalette[0];
+  /// Opens on the hand, not the pen. Notes and pinned papers only take taps
+  /// while a drawing tool is down, so starting in pen mode meant everything on
+  /// the board looked interactive and answered nothing.
+  BoardTool _tool = BoardTool.pan;
+  int _colorValue = _penColorValues[0];
   double _width = _penWidths[1];
   bool _centred = false;
   Size _viewport = Size.zero;
 
   List<Stroke>? _cacheSource;
+  ColorScheme? _cacheScheme;
   List<_DrawnStroke> _drawn = const [];
 
   @override
@@ -146,11 +165,15 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
     super.dispose();
   }
 
-  /// Rebuilds the paint cache only when the stream actually emits a new list.
-  void _syncCache(List<Stroke> strokes) {
-    if (identical(strokes, _cacheSource)) return;
+  /// Rebuilds the paint cache only when the stream emits a new list, or when the
+  /// theme flips and default-ink strokes have to resolve to a new colour.
+  void _syncCache(List<Stroke> strokes, ColorScheme scheme) {
+    if (identical(strokes, _cacheSource) && scheme == _cacheScheme) return;
     _cacheSource = strokes;
-    _drawn = strokes.map(_DrawnStroke.from).toList(growable: false);
+    _cacheScheme = scheme;
+    _drawn = strokes
+        .map((stroke) => _DrawnStroke.from(stroke, scheme))
+        .toList(growable: false);
   }
 
   /// The canvas is a large square rather than a truly infinite plane, so the
@@ -215,7 +238,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         .addStroke(
           boardId: widget.boardId,
           points: points.length == 1 ? [points.first, points.first] : points,
-          colorValue: _color.toARGB32(),
+          colorValue: _colorValue,
           width: _width,
         );
   }
@@ -253,6 +276,79 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         );
   }
 
+  Future<void> _rename(String current) async {
+    final controller = TextEditingController(text: current);
+    final title = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Rename board'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (title == null || title.isEmpty) return;
+    await ref.read(boardRepositoryProvider).rename(widget.boardId, title);
+  }
+
+  Future<void> _confirmClearInk() async {
+    final confirmed = await _confirm(
+      title: 'Erase all ink?',
+      body: 'Every stroke on this board goes. Notes and pinned papers stay.',
+      action: 'Erase',
+    );
+    if (!confirmed) return;
+    await ref.read(boardRepositoryProvider).clear(widget.boardId);
+  }
+
+  Future<void> _confirmDeleteBoard(String? title) async {
+    final confirmed = await _confirm(
+      title: 'Delete ${title ?? 'this board'}?',
+      body:
+          'The board, its ink and its notes go for good. Papers pinned to it '
+          'stay in your library.',
+      action: 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+
+    await ref.read(boardRepositoryProvider).delete(widget.boardId);
+    if (mounted) context.pop();
+  }
+
+  Future<bool> _confirm({
+    required String title,
+    required String body,
+    required String action,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
+  }
+
   void _eraseAt(Offset point) {
     // Newest first: the stroke on top is the one the eye expects to lose.
     for (final stroke in _drawn.reversed) {
@@ -273,12 +369,23 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
     // Watched, not merely read when the picker opens: a StreamProvider with no
     // listener has no value yet, and the picker would find the library empty.
     ref.watch(allPapersProvider);
-    _syncCache(strokes);
+    final scheme = Theme.of(context).colorScheme;
+    _syncCache(strokes, scheme);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(board?.title ?? 'Board'),
         actions: [
+          IconButton(
+            tooltip: 'Add a note',
+            icon: const Icon(Icons.sticky_note_2_outlined),
+            onPressed: _addNote,
+          ),
+          IconButton(
+            tooltip: 'Pin a paper',
+            icon: const Icon(Icons.attach_file),
+            onPressed: _addPaper,
+          ),
           IconButton(
             tooltip: 'Undo last stroke',
             icon: const Icon(Icons.undo),
@@ -292,6 +399,18 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
             tooltip: 'Recentre',
             icon: const Icon(Icons.filter_center_focus),
             onPressed: () => setState(() => _centred = false),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) => switch (value) {
+              'rename' => _rename(board?.title ?? ''),
+              'clear' => _confirmClearInk(),
+              _ => _confirmDeleteBoard(board?.title),
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rename', child: Text('Rename board')),
+              PopupMenuItem(value: 'clear', child: Text('Erase all ink')),
+              PopupMenuItem(value: 'delete', child: Text('Delete board')),
+            ],
           ),
         ],
       ),
@@ -320,10 +439,19 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                   children: [
                     Positioned.fill(
                       child: CustomPaint(
+                        painter: _GridPainter(
+                          transform: _transform,
+                          viewport: _viewport,
+                          color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: CustomPaint(
                         painter: _StrokesPainter(_drawn),
                         foregroundPainter: _LivePainter(
                           live: _live,
-                          color: _color,
+                          color: resolveInk(_colorValue, scheme),
                           width: _width,
                         ),
                       ),
@@ -343,6 +471,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                                 key: ValueKey(item.id),
                                 item: item,
                                 boardId: widget.boardId,
+                                interactive: _tool == BoardTool.pan,
                               ),
                             ),
                         ],
@@ -357,16 +486,19 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
       ),
       bottomNavigationBar: _Toolbar(
         tool: _tool,
-        color: _color,
+        colorValue: _colorValue,
         width: _width,
-        onAddNote: _addNote,
-        onAddPaper: _addPaper,
         onTool: (tool) => setState(() => _tool = tool),
-        onColor: (color) => setState(() {
-          _color = color;
+        // Picking a colour or a nib means you intend to draw, so both also put
+        // the pen back in your hand.
+        onColor: (value) => setState(() {
+          _colorValue = value;
           _tool = BoardTool.pen;
         }),
-        onWidth: (width) => setState(() => _width = width),
+        onWidth: (width) => setState(() {
+          _width = width;
+          _tool = BoardTool.pen;
+        }),
       ),
     );
   }
@@ -412,6 +544,70 @@ double _distanceToSegment(Offset p, Offset a, Offset b) {
     1.0,
   );
   return (p - Offset(a.dx + t * dx, a.dy + t * dy)).distance;
+}
+
+/// The dot grid that gives an otherwise featureless canvas a sense of place.
+///
+/// Only the dots actually on screen are drawn. The board is fifty thousand units
+/// square, so covering all of it would mean millions of dots for the handful
+/// anyone can see.
+class _GridPainter extends CustomPainter {
+  _GridPainter({
+    required this.transform,
+    required this.viewport,
+    required this.color,
+  }) : super(repaint: transform);
+
+  final TransformationController transform;
+  final Size viewport;
+  final Color color;
+
+  static const _baseSpacing = 40.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (viewport.isEmpty) return;
+
+    final inverse = Matrix4.copy(transform.value);
+    if (inverse.invert() == 0) return;
+
+    final visible = Rect.fromPoints(
+      MatrixUtils.transformPoint(inverse, Offset.zero),
+      MatrixUtils.transformPoint(
+        inverse,
+        Offset(viewport.width, viewport.height),
+      ),
+    );
+
+    final scale = transform.value.getMaxScaleOnAxis();
+    if (scale <= 0) return;
+
+    // Zooming out doubles the spacing rather than crowding the dots into a
+    // grey wash; zooming in keeps them from drifting metres apart.
+    var spacing = _baseSpacing;
+    while (spacing * scale < 18) {
+      spacing *= 2;
+    }
+    while (spacing * scale > 72) {
+      spacing /= 2;
+    }
+
+    final paint = Paint()..color = color;
+    final radius = math.min(1.4 / scale, spacing / 16);
+
+    final firstX = (visible.left / spacing).floorToDouble() * spacing;
+    final firstY = (visible.top / spacing).floorToDouble() * spacing;
+
+    for (var x = firstX; x <= visible.right; x += spacing) {
+      for (var y = firstY; y <= visible.bottom; y += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GridPainter old) =>
+      old.viewport != viewport || old.color != color;
 }
 
 class _StrokesPainter extends CustomPainter {
@@ -462,23 +658,19 @@ class _LivePainter extends CustomPainter {
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
     required this.tool,
-    required this.color,
+    required this.colorValue,
     required this.width,
     required this.onTool,
     required this.onColor,
     required this.onWidth,
-    required this.onAddNote,
-    required this.onAddPaper,
   });
 
   final BoardTool tool;
-  final Color color;
+  final int colorValue;
   final double width;
   final void Function(BoardTool tool) onTool;
-  final void Function(Color color) onColor;
+  final void Function(int colorValue) onColor;
   final void Function(double width) onWidth;
-  final VoidCallback onAddNote;
-  final VoidCallback onAddPaper;
 
   @override
   Widget build(BuildContext context) {
@@ -513,9 +705,12 @@ class _Toolbar extends StatelessWidget {
               onTap: () => onTool(BoardTool.eraser),
             ),
             _Separator(color: scheme.outlineVariant),
-            for (final option in _penPalette)
+            for (final option in _penColorValues)
               Center(
                 child: GestureDetector(
+                  // Opaque, not the default deferToChild: the swatch is smaller
+                  // than a fingertip and only its painted circle would take taps.
+                  behavior: HitTestBehavior.opaque,
                   onTap: () => onColor(option),
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 5),
@@ -523,35 +718,26 @@ class _Toolbar extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: option == color && tool == BoardTool.pen
+                        color: option == colorValue
                             ? scheme.primary
                             : Colors.transparent,
                         width: 2,
                       ),
                     ),
-                    child: CircleAvatar(backgroundColor: option, radius: 11),
+                    child: CircleAvatar(
+                      backgroundColor: resolveInk(option, scheme),
+                      radius: 11,
+                    ),
                   ),
                 ),
               ),
             _Separator(color: scheme.outlineVariant),
-            _ToolButton(
-              icon: Icons.sticky_note_2_outlined,
-              selected: false,
-              tooltip: 'Add a note',
-              onTap: onAddNote,
-            ),
-            _ToolButton(
-              icon: Icons.attach_file,
-              selected: false,
-              tooltip: 'Pin a paper',
-              onTap: onAddPaper,
-            ),
-            _Separator(color: scheme.outlineVariant),
             for (final option in _penWidths)
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => onWidth(option),
                 child: SizedBox(
-                  width: 36,
+                  width: 44,
                   child: Center(
                     child: Container(
                       width: math.max(option * 1.6, 6),
