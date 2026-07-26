@@ -5,15 +5,33 @@
 
 ## What the app does
 
-Catalog + downloader for arXiv papers. It does **not** read, render, or parse PDFs.
+Catalogue, downloader, and reader for arXiv papers.
 
 1. You share an arXiv link from the browser; the app fetches metadata.
-2. You file the paper under a project, saying *why* it belongs there.
-3. You tap Download; the PDF lands in `Documents/<project>/` and opens in whatever PDF
-   app you already use.
-4. You record where you stopped, in prose, and how this paper relates to others.
+2. You check the paper is the right one, then save it.
+3. You file it under a project, saying *why* it belongs there.
+4. You tap Download, then read the PDF in the app, highlighting as you go.
+5. You record where you stopped, in prose, and how this paper relates to others.
 
-The value is in the metadata, the relations, and the progress notes. Not in the PDF.
+The value is in the metadata, the relations, the highlights, and the progress notes.
+
+### Why there is a reader after all
+
+The first design had no PDF reader: existing readers are better at rendering than anything
+worth building here, so papers were handed off to whichever one the user had.
+
+That was wrong, for a reason that only became obvious in use. Reading a paper produces
+highlights and marginal notes, and those are the most valuable thing the app could hold —
+but in a foreign reader they are invisible to Cairn's search, unlinked from the paper's
+progress note, lost when the PDF is re-downloaded, and unexportable. The handoff gave away
+exactly the material the app exists to keep.
+
+So rendering is delegated to `pdfrx` (PDFium, open source), while **annotations belong to
+Cairn** and live in its database rather than being written into the PDF file. Highlights
+are searchable alongside notes, and a paper's page shows everything thought about it in one
+place. `syncfusion_flutter_pdfviewer` would have supplied a finished annotation UI in a
+fraction of the time, but it stores annotations in the file — the one thing worth not
+doing — and carries a commercial licence besides.
 
 ## Architecture: feature-first, three layers, Riverpod
 
@@ -88,10 +106,12 @@ they share a repository.
 
 ```
 Paper          id, arxivId, title, authors, abstract, publishedAt, pdfUrl,
-               relativePath, status, progressNote, addedAt, lastOpenedAt
+               relativePath, status, progressNote, addedAt, lastOpenedAt, lastPage
 Project        id, name, folderName, color, createdAt
 PaperProject   paperId, projectId, note        -- why this paper is in this project
 PaperRelation  fromId, toId, note              -- why these two papers are connected
+Annotation     id, paperId, pageNumber, quotedText, rectsJson, colorValue,
+               note, createdAt                 -- a highlight, and why it matters
 ```
 
 Both join tables carry a free-text `note`. That is the point of the app: a link with no
@@ -99,13 +119,27 @@ stated reason is barely worth more than no link. `progressNote` is prose ("stuck
 proof of Lemma 3") rather than a percentage, because prose is what actually helps when you
 come back three weeks later.
 
+`Annotation.rectsJson` holds `[[left,top,right,bottom], ...]` in **PDF page coordinates**:
+origin bottom-left, y increasing upward, so `top` is numerically above `bottom`. Page
+coordinates rather than screen ones, so a highlight lands in the same place at a different
+zoom, orientation, or device. One rect per line of the selection rather than one for the
+whole thing — otherwise a highlight running across three lines paints a single box over the
+entire paragraph.
+
 ## Storage
 
 Files live under `getApplicationDocumentsDirectory()/<project>/`, identical code on both
 platforms. iOS sandboxing has no equivalent of Android's Storage Access Framework, so the
-app owns one directory rather than writing into a folder the user picks. On iOS,
-`UIFileSharingEnabled` and `LSSupportsOpeningDocumentsInPlace` in `Info.plist` expose that
-directory in the Files app.
+app owns one directory rather than writing into a folder the user picks.
+
+**That directory is user-visible on iOS and private on Android**, which is worth stating
+plainly because it is asymmetric. `UIFileSharingEnabled` and
+`LSSupportsOpeningDocumentsInPlace` put it in the iOS Files app. On Android the same call
+returns `/data/data/<package>/app_flutter`, which no file manager can browse and no other
+app can read by path — PDFs reach a reader through a `FileProvider` content URI, and are
+invisible outside Cairn. Making them browsable on Android means either app-specific
+external storage or MediaStore, and neither has an iOS counterpart, so the asymmetry stays
+until there is a reason to pay for it.
 
 **Store paths relative to the documents directory, never absolute.** iOS changes the app
 container path on every update; an absolute path saved today is a dead path tomorrow.
@@ -120,6 +154,13 @@ container path on every update; an absolute path saved today is a dead path tomo
 - **`title` and `summary` contain real newlines and indentation** in the Atom response.
   Collapse whitespace before storing, or every list row renders broken.
 - **arXiv asks for one request per three seconds.** Throttle, or expect to be blocked.
+- **Cairn's own arxiv.org intent filter can swallow its own outgoing links.** Handing a
+  `https://arxiv.org/pdf/...` URL to the intent system resolves Cairn ahead of the browser,
+  so "open this elsewhere" reopens Cairn. The filter is scoped to `/abs`, and outgoing PDF
+  links use `LaunchMode.inAppBrowserView`, which always lands in a browser.
+- **A device may have no PDF viewer at all.** `OpenFilex.open` returns a result rather than
+  throwing, so an unchecked call leaves a button that silently does nothing. Check the
+  result and fall back to the copy on arXiv in a browser.
 - **A file deleted from outside the app leaves the database lying.** Check existence before
   opening; on a miss, clear `relativePath` and show the Download button again.
 - **The Android build needs `platforms;android-37.0`, not `android-37`.** Flutter 3.44

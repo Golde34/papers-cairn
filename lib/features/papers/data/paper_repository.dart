@@ -12,6 +12,17 @@ import '../../../core/storage/file_service.dart';
 /// Papers not yet filed under any project land here.
 const inboxFolderName = 'Inbox';
 
+/// What arXiv says about a paper, alongside the library's own copy if it has
+/// one. Shown before anything is written so the paper can be checked first.
+class PaperPreview {
+  const PaperPreview({required this.fetched, required this.existing});
+
+  final ArxivPaper fetched;
+  final Paper? existing;
+
+  bool get alreadySaved => existing != null;
+}
+
 class PaperRepository {
   PaperRepository(this._db, this._api, this._files);
 
@@ -58,13 +69,25 @@ class PaperRepository {
 
   Stream<List<Paper>> search(String term) {
     final pattern = '%${term.trim()}%';
+
+    // Highlights and their notes are searchable too. Finding a paper by
+    // something you wrote in the margin is the whole reason the annotations
+    // live in this database instead of inside the PDF.
+    final annotated = _db.selectOnly(_db.annotations)
+      ..addColumns([_db.annotations.paperId])
+      ..where(
+        _db.annotations.quotedText.like(pattern) |
+            _db.annotations.note.like(pattern),
+      );
+
     return (_db.select(_db.papers)
           ..where(
             (p) =>
                 p.title.like(pattern) |
                 p.abstractText.like(pattern) |
                 p.authors.like(pattern) |
-                p.progressNote.like(pattern),
+                p.progressNote.like(pattern) |
+                p.id.isInQuery(annotated),
           )
           ..orderBy([_byRecency]))
         .watch();
@@ -78,24 +101,34 @@ class PaperRepository {
         mode: OrderingMode.desc,
       );
 
-  /// Fetches metadata for [idOrUrl] and stores it.
+  /// Looks a paper up on arXiv without storing anything.
   ///
-  /// Returns the existing row if the paper is already in the library, matching
-  /// on the version-stripped id so that sharing `v2` of something saved as `v1`
-  /// does not create a second copy.
-  Future<Paper> addFromArxiv(String idOrUrl, {int? projectId}) async {
+  /// Nothing is written until [save] is called, so a mistyped id costs a lookup
+  /// rather than a row that has to be found and deleted again.
+  Future<PaperPreview> preview(String idOrUrl) async {
     final arxivId = extractArxivId(idOrUrl);
     if (arxivId == null) {
       throw ArxivException('No arXiv id found in "$idOrUrl"');
     }
 
-    final existing = await findByArxivId(arxivId);
+    return PaperPreview(
+      fetched: await _api.fetchById(arxivId),
+      existing: await findByArxivId(arxivId),
+    );
+  }
+
+  /// Stores a previewed paper.
+  ///
+  /// Returns the existing row if the library already has it, matching on the
+  /// version-stripped id so that saving `v2` of something stored as `v1` files
+  /// the copy already there instead of creating a duplicate.
+  Future<Paper> save(ArxivPaper fetched, {int? projectId}) async {
+    final existing = await findByArxivId(fetched.arxivId);
     if (existing != null) {
       if (projectId != null) await addToProject(existing.id, projectId);
       return existing;
     }
 
-    final fetched = await _api.fetchById(arxivId);
     final id = await _db
         .into(_db.papers)
         .insert(
@@ -113,6 +146,16 @@ class PaperRepository {
 
     if (projectId != null) await addToProject(id, projectId);
     return (_db.select(_db.papers)..where((p) => p.id.equals(id))).getSingle();
+  }
+
+  /// Looks up and stores in one step.
+  ///
+  /// Used by the share sheet, where the whole point is capturing a paper in one
+  /// tap. Papers arriving this way land in the inbox, which is itself the review
+  /// queue, so there is nothing for a confirmation step to protect.
+  Future<Paper> addFromArxiv(String idOrUrl, {int? projectId}) async {
+    final result = await preview(idOrUrl);
+    return save(result.fetched, projectId: projectId);
   }
 
   Future<Paper?> findByArxivId(String arxivId) async {
@@ -274,6 +317,11 @@ class PaperRepository {
       (_db.update(_db.papers)..where((p) => p.id.equals(paperId))).write(
         PapersCompanion(lastOpenedAt: Value(DateTime.now())),
       );
+
+  /// Remembers the page the reader was left on so the next open resumes there.
+  Future<void> setLastPage(int paperId, int page) =>
+      (_db.update(_db.papers)..where((p) => p.id.equals(paperId)))
+          .write(PapersCompanion(lastPage: Value(page)));
 }
 
 final paperRepositoryProvider = Provider<PaperRepository>(

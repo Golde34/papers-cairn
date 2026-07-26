@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/database/database.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../projects/data/project_repository.dart';
+import '../../reader/data/annotation_repository.dart';
 import '../data/paper_repository.dart';
 
 class PaperDetailScreen extends ConsumerWidget {
@@ -101,6 +103,8 @@ class _Body extends ConsumerWidget {
         const SizedBox(height: 16),
         _ProgressNoteField(paper: paper),
         const Divider(height: 32),
+        _HighlightsSection(paper: paper),
+        const Divider(height: 32),
         _ProjectsSection(paper: paper),
         const Divider(height: 32),
         _RelationsSection(paper: paper),
@@ -183,18 +187,38 @@ class _PdfSectionState extends ConsumerState<_PdfSection> {
     if (file == null) {
       // localFile has already cleared the stale path, so the button below has
       // flipped back to Download by the time this message is read.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('That file is gone from storage. Download it again.'),
-          ),
-        );
-      }
+      _tell('That file is gone from storage. Download it again.');
       return;
     }
 
     await repository.markOpened(widget.paper.id);
-    await OpenFilex.open(file.path);
+
+    final result = await OpenFilex.open(file.path);
+    if (result.type == ResultType.done) return;
+
+    // Nothing on the device claims application/pdf. The download is fine and
+    // still on disk; there is simply no reader. Hand the arXiv copy to a full
+    // browser as a stopgap.
+    //
+    // externalApplication, not inAppBrowserView: a Custom Tab is a stripped
+    // Chrome that cannot download, so it answers a PDF URL with "Can't download
+    // link". This is safe from bouncing back into Cairn because the arxiv.org
+    // intent filter is scoped to /abs.
+    _tell('No PDF reader installed. Trying the browser instead.');
+    final opened = await launchUrl(
+      Uri.parse(widget.paper.pdfUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened) {
+      _tell('Install a PDF reader to open downloaded papers.');
+    }
+  }
+
+  void _tell(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -219,11 +243,31 @@ class _PdfSectionState extends ConsumerState<_PdfSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        FilledButton.icon(
-          onPressed: downloaded ? _open : _download,
-          icon: Icon(downloaded ? Icons.open_in_new : Icons.download),
-          label: Text(downloaded ? 'Open PDF' : 'Download PDF'),
-        ),
+        if (!downloaded)
+          FilledButton.icon(
+            onPressed: _download,
+            icon: const Icon(Icons.download),
+            label: const Text('Download PDF'),
+          )
+        else
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () =>
+                      context.push('/paper/${widget.paper.id}/read'),
+                  icon: const Icon(Icons.chrome_reader_mode_outlined),
+                  label: const Text('Read'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Open in another app',
+                icon: const Icon(Icons.open_in_new),
+                onPressed: _open,
+              ),
+            ],
+          ),
         if (_error != null) ...[
           const SizedBox(height: 8),
           Text(
@@ -317,6 +361,60 @@ class _ProgressNoteFieldState extends ConsumerState<_ProgressNoteField> {
           hintText: 'Read up to section 4.2, stuck on the proof of Lemma 3',
           border: OutlineInputBorder(),
         ),
+      ),
+    );
+  }
+}
+
+/// Highlights made in the reader, shown here so the paper's page is one place
+/// for everything thought about it rather than a launcher for the PDF.
+class _HighlightsSection extends ConsumerWidget {
+  const _HighlightsSection({required this.paper});
+
+  final Paper paper;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final annotations = ref.watch(annotationsProvider(paper.id));
+    final scheme = Theme.of(context).colorScheme;
+
+    return _Section(
+      title: 'Highlights',
+      child: annotations.when(
+        loading: () => const SizedBox(height: 24),
+        error: (error, _) => Text('$error'),
+        data: (items) => items.isEmpty
+            ? Text(
+                paper.relativePath == null
+                    ? 'Download the paper to start highlighting.'
+                    : 'None yet. Select text while reading to make one.',
+                style: Theme.of(context).textTheme.bodySmall,
+              )
+            : Column(
+                children: [
+                  for (final annotation in items)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 4,
+                        height: 36,
+                        color: Color(annotation.colorValue),
+                      ),
+                      title: Text(
+                        annotation.quotedText,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        annotation.note.isEmpty
+                            ? 'Page ${annotation.pageNumber}'
+                            : 'Page ${annotation.pageNumber} · ${annotation.note}',
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                      onTap: () => context.push('/paper/${paper.id}/read'),
+                    ),
+                ],
+              ),
       ),
     );
   }
@@ -425,13 +523,19 @@ class _RelationsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final related = ref.watch(relatedPapersProvider(paper.id));
+    // Watched, not read inside the handler. A StreamProvider nobody is
+    // listening to has no value yet, so reading it on the first tap always came
+    // back empty and the button claimed there was nothing to link to.
+    final candidates = (ref.watch(allPapersProvider).value ?? [])
+        .where((candidate) => candidate.id != paper.id)
+        .toList();
 
     return _Section(
       title: 'Related papers',
       action: TextButton.icon(
         icon: const Icon(Icons.add_link, size: 18),
         label: const Text('Link'),
-        onPressed: () => _link(context, ref),
+        onPressed: () => _link(context, ref, candidates),
       ),
       child: related.when(
         loading: () => const SizedBox(height: 24),
@@ -467,11 +571,11 @@ class _RelationsSection extends ConsumerWidget {
     );
   }
 
-  Future<void> _link(BuildContext context, WidgetRef ref) async {
-    final candidates = (ref.read(allPapersProvider).value ?? [])
-        .where((candidate) => candidate.id != paper.id)
-        .toList();
-
+  Future<void> _link(
+    BuildContext context,
+    WidgetRef ref,
+    List<Paper> candidates,
+  ) async {
     if (candidates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add another paper first.')),

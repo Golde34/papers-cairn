@@ -3,6 +3,7 @@
 
     <application
         android:label="Cairn"
+        android:enableOnBackInvokedCallback="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -34,13 +35,17 @@
                 <data android:mimeType="text/plain"/>
             </intent-filter>
 
-            <!-- Opening an arxiv.org link offers Cairn alongside the browser. -->
+            <!-- Opening an arxiv.org abstract page offers Cairn alongside the
+                 browser. Scoped to /abs on purpose: claiming /pdf too would make
+                 Cairn the handler for its own "open this PDF elsewhere" fallback,
+                 which just reopens Cairn. Sharing a /pdf link still works — that
+                 arrives through the ACTION_SEND filter above. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="arxiv.org"/>
-                <data android:scheme="http" android:host="arxiv.org"/>
+                <data android:scheme="https" android:host="arxiv.org" android:pathPrefix="/abs"/>
+                <data android:scheme="http" android:host="arxiv.org" android:pathPrefix="/abs"/>
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
@@ -64,6 +69,12 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:mimeType="application/pdf"/>
+        </intent>
+        <!-- url_launcher opening the PDF straight from arxiv.org before it is
+             downloaded. Without this declaration launchUrl just returns false. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
         </intent>
     </queries>
 </manifest>

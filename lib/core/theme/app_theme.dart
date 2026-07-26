@@ -16,6 +16,17 @@ const projectPalette = <Color>[
   Color(0xFF3E7A6E),
 ];
 
+/// Highlight colours. Saturated rather than muted, unlike [projectPalette]:
+/// these are painted translucent over page text, where anything subtle
+/// disappears against the paper.
+const highlightPalette = <Color>[
+  Color(0xFFFFD54F),
+  Color(0xFF81C784),
+  Color(0xFF64B5F6),
+  Color(0xFFF06292),
+  Color(0xFFBA68C8),
+];
+
 ThemeData buildTheme(Brightness brightness) {
   final scheme = ColorScheme.fromSeed(
     seedColor: seedColor,

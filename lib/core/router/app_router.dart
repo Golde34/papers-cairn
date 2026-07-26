@@ -5,6 +5,7 @@ import '../../features/home/presentation/home_screen.dart';
 import '../../features/papers/presentation/paper_detail_screen.dart';
 import '../../features/papers/presentation/search_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
+import '../../features/reader/presentation/reader_screen.dart';
 
 final appRouter = GoRouter(
   routes: [
@@ -14,6 +15,13 @@ final appRouter = GoRouter(
       path: '/paper/:id',
       builder: (_, state) =>
           _withIntId(state, (id) => PaperDetailScreen(paperId: id)),
+      routes: [
+        GoRoute(
+          path: 'read',
+          builder: (_, state) =>
+              _withIntId(state, (id) => ReaderScreen(paperId: id)),
+        ),
+      ],
     ),
     GoRoute(
       path: '/project/:id',

@@ -32,6 +32,40 @@ class Papers extends Table {
 
   DateTimeColumn get addedAt => dateTime()();
   DateTimeColumn get lastOpenedAt => dateTime().nullable()();
+
+  /// Page the reader was last on, so reopening a paper resumes rather than
+  /// restarting. Null until the paper has been opened in the reader.
+  IntColumn get lastPage => integer().nullable()();
+}
+
+/// A highlight in a paper, with an optional note attached.
+///
+/// Deliberately stored here rather than written into the PDF file. Annotations
+/// in the file would be invisible to search, lost on re-download, and unusable
+/// by any future export. Kept in the database they sit alongside progress notes
+/// as one body of thinking about the paper — which is the entire point of the app.
+class Annotations extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get paperId =>
+      integer().references(Papers, #id, onDelete: KeyAction.cascade)();
+
+  /// 1-based, matching how PDF readers and papers themselves count pages.
+  IntColumn get pageNumber => integer()();
+
+  /// The highlighted text itself. Searchable, and what shows in a list of
+  /// highlights without having to open the PDF.
+  TextColumn get quotedText => text()();
+
+  /// Highlight geometry as `[[left,top,right,bottom], ...]` in PDF page
+  /// coordinates — origin bottom-left, y increasing upward. One rect per line
+  /// of the selection, so a highlight spanning three lines does not paint one
+  /// fat box over the paragraph. Page coordinates rather than screen ones, so
+  /// they survive zoom, rotation, and a different device.
+  TextColumn get rectsJson => text()();
+
+  IntColumn get colorValue => integer()();
+  TextColumn get note => text().withDefault(const Constant(''))();
+  DateTimeColumn get createdAt => dateTime()();
 }
 
 class Projects extends Table {

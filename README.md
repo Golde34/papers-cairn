@@ -7,9 +7,9 @@ Share an arXiv link from your browser and Cairn fetches the metadata, files the 
 a project, downloads the PDF into a folder you can see, and remembers where you stopped —
 in prose, not a percentage.
 
-It deliberately does **not** read or parse PDFs. Your existing PDF reader is better at that
-than anything worth building here. Cairn keeps the part that reader cannot: which papers
-belong together, why, and what you were in the middle of.
+You read the paper inside Cairn and highlight as you go. Those highlights are Cairn's, not
+the PDF's: searchable next to your notes, still there after re-downloading the file, and
+attached to the paper rather than trapped in whichever reader made them.
 
 ## Running it
 
@@ -29,18 +29,20 @@ flutter analyze
 
 ## What it does today
 
-- Add a paper from an arXiv link, id, or citation string — or share one in from the browser
+- Look a paper up from an arXiv link, id, or citation string, check it is the right one,
+  then save it — or share one in from the browser
 - Group papers into projects, recording why each one belongs there
 - Link papers to each other, recording why they are connected
 - Track reading status and a free-text note on where you stopped
-- Download the PDF into `Documents/<project>/` and open it in your usual reader
-- Search across titles, authors, abstracts, and your own notes
+- Download the PDF and read it in the app, resuming on the page you left
+- Highlight text in five colours and attach a note to any highlight
+- Search across titles, authors, abstracts, your notes, and your highlights
 
 ## What it does not do yet
 
-No in-app PDF reader, no citation graph, no BibTeX or Obsidian export, no sync between
-devices. The iOS share sheet also needs a Share Extension target that does not exist yet —
-sharing in works on Android only for now.
+No citation graph, no BibTeX or Obsidian export, no sync between devices, no freehand ink
+or sticky notes on the page. The iOS share sheet also needs a Share Extension target that
+does not exist yet — sharing in works on Android only for now.
 
 ## Layout
 
