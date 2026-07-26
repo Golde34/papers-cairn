@@ -20,7 +20,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _tab = 0;
 
-  static const _titles = ['Reading', 'Inbox', 'Projects', 'Boards'];
+  static const _titles = ['Reading', 'Library', 'Projects', 'Boards'];
 
   @override
   void initState() {
@@ -75,7 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         index: _tab,
         children: const [
           _ReadingTab(),
-          _InboxTab(),
+          _LibraryTab(),
           ProjectsTab(),
           BoardsTab(),
         ],
@@ -98,9 +98,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             label: 'Reading',
           ),
           NavigationDestination(
-            icon: Icon(Icons.inbox_outlined),
-            selectedIcon: Icon(Icons.inbox),
-            label: 'Inbox',
+            icon: Icon(Icons.library_books_outlined),
+            selectedIcon: Icon(Icons.library_books),
+            label: 'Library',
           ),
           NavigationDestination(
             icon: Icon(Icons.folder_outlined),

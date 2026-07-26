@@ -466,12 +466,20 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                             Positioned(
                               left: item.x,
                               top: item.y,
-                              width: item.width,
-                              child: BoardItemView(
-                                key: ValueKey(item.id),
-                                item: item,
-                                boardId: widget.boardId,
-                                interactive: _tool == BoardTool.pan,
+                              // A maximum rather than a fixed width, so a note
+                              // saying "ok" is the size of the word instead of a
+                              // wide empty card with its delete button stranded
+                              // at the far corner.
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: item.width,
+                                ),
+                                child: BoardItemView(
+                                  key: ValueKey(item.id),
+                                  item: item,
+                                  boardId: widget.boardId,
+                                  interactive: _tool == BoardTool.pan,
+                                ),
                               ),
                             ),
                         ],

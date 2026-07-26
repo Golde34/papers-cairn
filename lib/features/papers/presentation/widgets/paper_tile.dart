@@ -6,9 +6,13 @@ import '../../../../core/database/database.dart';
 import '../../../../core/theme/app_theme.dart';
 
 class PaperTile extends StatelessWidget {
-  const PaperTile({super.key, required this.paper});
+  const PaperTile({super.key, required this.paper, this.unfiled = false});
 
   final Paper paper;
+
+  /// Marks a paper that belongs to no project. Only the library shows this;
+  /// inside a project every paper is filed by definition.
+  final bool unfiled;
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +38,23 @@ class PaperTile extends StatelessWidget {
               : FontStyle.normal,
         ),
       ),
-      trailing: paper.relativePath != null
-          ? Icon(Icons.picture_as_pdf, size: 18, color: scheme.outline)
-          : null,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (unfiled)
+            Tooltip(
+              message: 'Not filed under any project',
+              child: Icon(
+                Icons.inbox_outlined,
+                size: 18,
+                color: scheme.outline,
+              ),
+            ),
+          if (unfiled && paper.relativePath != null) const SizedBox(width: 10),
+          if (paper.relativePath != null)
+            Icon(Icons.picture_as_pdf, size: 18, color: scheme.outline),
+        ],
+      ),
     );
   }
 }

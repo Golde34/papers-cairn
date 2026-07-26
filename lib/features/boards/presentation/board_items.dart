@@ -45,32 +45,51 @@ class BoardItemView extends ConsumerStatefulWidget {
 
 class _BoardItemViewState extends ConsumerState<BoardItemView> {
   Offset _drag = Offset.zero;
+  Offset? _panOrigin;
   bool _dragging = false;
 
   static const _tapSlop = 6.0;
 
-  void _onLongPressStart(LongPressStartDetails details) {
+  /// Gap above and right of the card, so the badge has somewhere to sit that is
+  /// still inside the hit-testable area.
+  static const _badgeGap = 12.0;
+
+  /// Touch target for the delete badge, well above the 22 pixels the visible
+  /// circle occupies.
+  static const _badgeTarget = 44.0;
+
+  void _onPanStart(DragStartDetails details) {
+    _panOrigin = details.localPosition;
     setState(() {
       _dragging = true;
       _drag = Offset.zero;
     });
   }
 
-  void _onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
-    // Local rather than global: this widget sits inside the board's transform,
-    // so the local offset is already in board units at any zoom.
-    setState(() => _drag = details.localOffsetFromOrigin);
+  void _onPanUpdate(DragUpdateDetails details) {
+    final origin = _panOrigin;
+    if (origin == null) return;
+    // localPosition, not delta: delta arrives in screen pixels and would move
+    // the item by the wrong amount at any zoom other than 100%. Local positions
+    // are already in board units. This only reads correctly because the
+    // Transform below has transformHitTests off, leaving the box where it was.
+    setState(() => _drag = details.localPosition - origin);
   }
 
-  Future<void> _onLongPressEnd(LongPressEndDetails details) async {
+  Future<void> _onPanEnd(DragEndDetails details) {
+    _panOrigin = null;
+    return _commitDrag();
+  }
+
+  Future<void> _commitDrag() async {
     final moved = _drag;
     setState(() {
       _dragging = false;
       _drag = Offset.zero;
     });
 
-    // A long press that never moved is just a long press; the delete badge is
-    // there for removing things.
+    // A press that never moved is just a press; the delete badge is there for
+    // removing things.
     if (moved.distance < _tapSlop) return;
 
     await ref
@@ -132,41 +151,64 @@ class _BoardItemViewState extends ConsumerState<BoardItemView> {
 
     return Transform.translate(
       offset: _drag,
-      // Overflow so the delete badge can sit on the card's corner rather than
-      // eating space inside it.
+      // Hit tests stay on the untranslated box so the running drag keeps
+      // measuring against where the item started.
+      transformHitTests: false,
       child: Stack(
-        clipBehavior: Clip.none,
         children: [
-          GestureDetector(
-            onTap: _onTap,
-            onLongPressStart: _onLongPressStart,
-            onLongPressMoveUpdate: _onLongPressMoveUpdate,
-            onLongPressEnd: _onLongPressEnd,
-            child: Opacity(
-              opacity: _dragging ? 0.75 : 1,
-              child: switch (widget.item.kind) {
-                BoardItemKind.text => _NoteCard(item: widget.item),
-                BoardItemKind.paper => _PaperCard(item: widget.item),
-              },
+          // Space reserved at the top-right for the delete badge. The badge used
+          // to hang outside the Stack on negative offsets, where most of it was
+          // untappable: a RenderBox rejects a hit outside its own size before it
+          // ever asks its children.
+          Padding(
+            padding: const EdgeInsets.only(top: _badgeGap, right: _badgeGap),
+            child: GestureDetector(
+              onTap: _onTap,
+              // A drag that starts on an item moves the item; one that starts on
+              // empty board pans the canvas. The child recognizer wins the arena
+              // against the InteractiveViewer above it, so no mode switch and no
+              // long press is needed.
+              onPanStart: _onPanStart,
+              onPanUpdate: _onPanUpdate,
+              onPanEnd: _onPanEnd,
+              child: Opacity(
+                opacity: _dragging ? 0.75 : 1,
+                child: switch (widget.item.kind) {
+                  BoardItemKind.text => _NoteCard(item: widget.item),
+                  BoardItemKind.paper => _PaperCard(item: widget.item),
+                },
+              ),
             ),
           ),
           // Hidden while a drawing tool is up. Shown but inert would be worse
           // than absent: a button that ignores taps reads as broken.
           if (!_dragging && widget.interactive)
             Positioned(
-              top: -10,
-              right: -10,
+              top: 0,
+              right: 0,
+              // A finger-sized target around a small glyph. The circle stays
+              // discreet; the area that answers it does not.
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: _confirmDelete,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: scheme.surfaceContainerHighest,
-                    border: Border.all(color: scheme.outlineVariant),
+                child: SizedBox(
+                  width: _badgeTarget,
+                  height: _badgeTarget,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: scheme.surfaceContainerHighest,
+                        border: Border.all(color: scheme.outlineVariant),
+                      ),
+                      child: Icon(
+                        Icons.close,
+                        size: 15,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   ),
-                  child: Icon(Icons.close, size: 14, color: scheme.onSurfaceVariant),
                 ),
               ),
             ),
