@@ -39,13 +39,15 @@ flutter analyze
 - Search across titles, authors, abstracts, your notes, and your highlights
 - Draw on boards: an unbounded surface for sketching how the ideas fit together,
   optionally tied to a project
+- Write notes on a board and pin papers from your library onto it, then scribble
+  between them
 
 ## What it does not do yet
 
-Boards take ink and nothing else yet — no text blocks, and no pinning papers onto them.
-Beyond that: no citation graph, no BibTeX or Obsidian export, no sync between devices, no
-ink on PDF pages. The iOS share sheet also needs a Share Extension target that does not
-exist yet — sharing in works on Android only for now.
+Board items cannot be resized, and there are no connector lines between them beyond ones
+you draw by hand. Beyond that: no citation graph, no BibTeX or Obsidian export, no sync
+between devices, no ink on PDF pages. The iOS share sheet also needs a Share Extension
+target that does not exist yet — sharing in works on Android only for now.
 
 ## Layout
 

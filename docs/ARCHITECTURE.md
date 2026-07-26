@@ -114,6 +114,8 @@ Annotation     id, paperId, pageNumber, quotedText, rectsJson, colorValue,
                note, createdAt                 -- a highlight, and why it matters
 Board          id, title, projectId, createdAt, updatedAt
 Stroke         id, boardId, pointsJson, colorValue, width, createdAt
+BoardItem      id, boardId, kind, x, y, width, body, paperId, colorValue,
+               createdAt                      -- a note, or a paper pinned on
 ```
 
 Both join tables carry a free-text `note`. That is the point of the app: a link with no
@@ -125,6 +127,18 @@ A **board** is an unbounded surface to think on — sketch the argument, draw th
 scribble the question you cannot yet phrase. It is deliberately not a project: a project is
 a tidy list of what you are reading, while a board is the working-out a list cannot hold. A
 board may belong to a project or float free.
+
+A pinned paper is a **reference, not a copy**: `BoardItem` stores only `paperId`, so the
+card always shows the paper's current title and opens the real one. Deleting a paper from
+the library cascades to its cards rather than leaving them pointing at nothing.
+`BoardItem.body` is spelled that way because a column called `text` collides with drift's
+own `Table.text()` builder.
+
+Board items store a width but no height: a note should grow as it is written rather than
+scroll inside a fixed box. Their gestures are deliberately split — tap opens, long-press
+then drag moves — because a plain drag would be ambiguous with panning the board, and the
+two would fight in the gesture arena. While a drawing tool is selected the items are
+wrapped in `IgnorePointer`, so ink goes straight across them.
 
 `Stroke.pointsJson` holds `[[x,y], ...]` in **board coordinates**, so a line drawn zoomed
 right in stays put when you zoom back out. Coordinates are rounded to a tenth of a unit —

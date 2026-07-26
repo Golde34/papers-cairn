@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/database/database.dart';
+import '../../papers/data/paper_repository.dart';
 import '../data/board_repository.dart';
+import 'board_items.dart';
 
 enum BoardTool { pan, pen, eraser }
 
@@ -531,6 +533,19 @@ class _Toolbar extends StatelessWidget {
                   ),
                 ),
               ),
+            _Separator(color: scheme.outlineVariant),
+            _ToolButton(
+              icon: Icons.sticky_note_2_outlined,
+              selected: false,
+              tooltip: 'Add a note',
+              onTap: onAddNote,
+            ),
+            _ToolButton(
+              icon: Icons.attach_file,
+              selected: false,
+              tooltip: 'Pin a paper',
+              onTap: onAddPaper,
+            ),
             _Separator(color: scheme.outlineVariant),
             for (final option in _penWidths)
               GestureDetector(

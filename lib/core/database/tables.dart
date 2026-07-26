@@ -95,7 +95,10 @@ class BoardItems extends Table {
   /// as it is written rather than scroll inside a fixed box.
   RealColumn get width => real()();
 
-  TextColumn get text => text().withDefault(const Constant(''))();
+  /// Named `body` rather than `text`, which would collide with drift's own
+  /// `Table.text()` column builder.
+  TextColumn get body => text().withDefault(const Constant(''))();
+
   IntColumn get paperId =>
       integer().nullable().references(Papers, #id, onDelete: KeyAction.cascade)();
   IntColumn get colorValue => integer()();

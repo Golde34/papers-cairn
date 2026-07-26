@@ -103,7 +103,7 @@ class _BoardItemViewState extends ConsumerState<BoardItemView> {
   Future<void> _onTap() async {
     switch (widget.item.kind) {
       case BoardItemKind.text:
-        final text = await showBoardNoteEditor(context, widget.item.text);
+        final text = await showBoardNoteEditor(context, widget.item.body);
         if (text == null) return;
         await ref
             .read(boardRepositoryProvider)
@@ -143,7 +143,7 @@ class _NoteCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final empty = item.text.trim().isEmpty;
+    final empty = item.body.trim().isEmpty;
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -153,7 +153,7 @@ class _NoteCard extends StatelessWidget {
         border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4)),
       ),
       child: Text(
-        empty ? 'Tap to write…' : item.text,
+        empty ? 'Tap to write…' : item.body,
         style: TextStyle(
           height: 1.35,
           color: empty ? scheme.onSurfaceVariant : scheme.onSurface,

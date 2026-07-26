@@ -131,7 +131,7 @@ class BoardRepository {
             x: at.dx,
             y: at.dy,
             width: 260,
-            text: Value(text),
+            body: Value(text),
             colorValue: colorValue,
             createdAt: DateTime.now(),
           ),
@@ -176,7 +176,7 @@ class BoardRepository {
 
   Future<void> setItemText(int id, String text, int boardId) async {
     await (_db.update(_db.boardItems)..where((i) => i.id.equals(id)))
-        .write(BoardItemsCompanion(text: Value(text)));
+        .write(BoardItemsCompanion(body: Value(text)));
     await _touch(boardId);
   }
 
