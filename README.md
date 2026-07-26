@@ -1,4 +1,4 @@
-# Cairn
+# Papers Cairn
 
 A cairn is a stack of stones marking a trail, so whoever comes next knows where they are on
 the path. This app does that for the papers you are reading.
