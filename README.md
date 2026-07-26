@@ -27,6 +27,30 @@ flutter test        # unit tests, no device needed
 flutter analyze
 ```
 
+## Packaging it
+
+```bash
+./tool/release.sh              # analyse, test, build → dist/cairn-<version>-<date>.apk
+./tool/release.sh --universal  # every CPU architecture, for an older device
+```
+
+The APK is signed with the **debug key**, deliberately. Signing with a fresh release key
+would change the app's signature, and Android refuses to install a differently-signed build
+over an existing one — the only way through is to uninstall, which takes every paper,
+highlight and board with it. For an app only its author installs, the debug key costs
+nothing.
+
+That makes `~/.android/debug.keystore` load-bearing: **lose it and the app can never be
+updated again**, only uninstalled and reinstalled empty. It is 2.6 KB. Copy it somewhere
+safe.
+
+The app icon comes from `tool/make_icon.py` rather than a checked-in image, so changing it
+means editing a few numbers:
+
+```bash
+python3 tool/make_icon.py && dart run flutter_launcher_icons
+```
+
 ## What it does today
 
 - Look a paper up from an arXiv link, id, or citation string, check it is the right one,

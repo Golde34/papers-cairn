@@ -59,6 +59,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.15.1
   drift_dev: ^2.34.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -101,3 +102,15 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# App icon. Regenerate the source art with `python3 tool/make_icon.py`, then
+# run `dart run flutter_launcher_icons` to fan it out across every density.
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  android: "ic_launcher"
+  ios: true
+  remove_alpha_ios: true
+  # Android crops adaptive icons to a launcher-chosen shape, so the stones live
+  # in a separate transparent layer that keeps clear of the edges.
+  adaptive_icon_background: "#2F3D33"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
