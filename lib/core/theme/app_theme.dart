@@ -1,0 +1,54 @@
+import 'package:flutter/material.dart';
+
+import '../database/database.dart';
+
+const seedColor = Color(0xFF4A5D4E);
+
+/// Palette offered when creating a project. Muted on purpose — these are
+/// wayfinding marks, and a list of twelve saturated chips is harder to tell
+/// apart at a glance than six quiet ones.
+const projectPalette = <Color>[
+  Color(0xFF4A5D4E),
+  Color(0xFF7A5C3E),
+  Color(0xFF3E5A7A),
+  Color(0xFF7A3E52),
+  Color(0xFF5B4A7A),
+  Color(0xFF3E7A6E),
+];
+
+ThemeData buildTheme(Brightness brightness) {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: seedColor,
+    brightness: brightness,
+  );
+  return ThemeData(
+    colorScheme: scheme,
+    useMaterial3: true,
+    listTileTheme: const ListTileThemeData(
+      titleTextStyle: TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+    ),
+  );
+}
+
+extension ReadingStatusPresentation on ReadingStatus {
+  String get label => switch (this) {
+    ReadingStatus.toRead => 'To read',
+    ReadingStatus.reading => 'Reading',
+    ReadingStatus.done => 'Done',
+    ReadingStatus.dropped => 'Dropped',
+  };
+
+  IconData get icon => switch (this) {
+    ReadingStatus.toRead => Icons.schedule,
+    ReadingStatus.reading => Icons.auto_stories,
+    ReadingStatus.done => Icons.check_circle_outline,
+    ReadingStatus.dropped => Icons.remove_circle_outline,
+  };
+
+  Color color(ColorScheme scheme) => switch (this) {
+    ReadingStatus.toRead => scheme.outline,
+    ReadingStatus.reading => scheme.primary,
+    ReadingStatus.done => scheme.tertiary,
+    ReadingStatus.dropped => scheme.outlineVariant,
+  };
+}

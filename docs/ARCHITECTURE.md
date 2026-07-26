@@ -39,6 +39,9 @@ textbook version defines a domain entity, a data model, and mapping code both di
 That is real value when the DB schema and the domain diverge — which is not true here and
 may never be.
 
+**No DAO classes either.** Repositories query drift directly. A DAO layer between them
+would be a second seam doing the same job as the first.
+
 The thing worth keeping from Clean Architecture is kept: **the UI knows nothing about
 SQLite or HTTP.** Every widget talks to a Repository. If drift or dio is ever swapped out,
 the blast radius stops at `data/`. Adding the omitted layers later is mechanical, because
@@ -54,7 +57,6 @@ lib/
     database/
       database.dart              AppDatabase (drift)
       tables.dart                Papers, Projects, PaperProjects, PaperRelations
-      daos/                      PaperDao, ProjectDao
     network/
       arxiv_api.dart             dio + Atom XML parsing
       arxiv_id.dart              extract an arXiv id from a URL or pasted string
@@ -64,16 +66,19 @@ lib/
       share_receiver.dart        inbound links from the OS share sheet
     router/app_router.dart       go_router
     theme/app_theme.dart
+    providers.dart               database, api and file service singletons
   features/
-    inbox/                       shared-in papers not yet filed
+    home/presentation/           bottom nav: Reading, Inbox, Projects
     papers/
       data/paper_repository.dart
-      presentation/              screens, controllers, widgets
+      presentation/              detail, search, add sheet, shared widgets
     projects/
       data/project_repository.dart
       presentation/
-  shared/widgets/
 ```
+
+The inbox is not a feature of its own — it is a query for papers belonging to no project,
+which keeps "unfiled" from becoming a state that can disagree with the join table.
 
 `core/` is infrastructure with no feature knowledge. `features/` may depend on `core/`.
 Features do not import each other's `presentation/`; if two features need the same data,
@@ -117,6 +122,13 @@ container path on every update; an absolute path saved today is a dead path tomo
 - **arXiv asks for one request per three seconds.** Throttle, or expect to be blocked.
 - **A file deleted from outside the app leaves the database lying.** Check existence before
   opening; on a miss, clear `relativePath` and show the Download button again.
+- **The Android build needs `platforms;android-37.0`, not `android-37`.** Flutter 3.44
+  defaults `compileSdk` to 36, but `receive_sharing_intent` compiles against 37 and its AAR
+  metadata forces consumers to match, so `android/app/build.gradle.kts` pins 37 explicitly.
+  From API 36 onwards Google ships minor-versioned platforms, so the SDK directory is
+  `android-37.0`; installing plain `android-37` is not an option and AGP resolves the minor
+  version on its own once it is present. Gradle failing with `Failed to find target with
+  hash string 'android-37'` means the platform is simply not installed.
 
 ## Not now
 

@@ -6,7 +6,10 @@ plugins {
 
 android {
     namespace = "dev.vietnguyen.cairn"
-    compileSdk = flutter.compileSdkVersion
+    // Flutter 3.44 defaults to 36, but receive_sharing_intent compiles against 37
+    // and AAR metadata requires consumers to match. Requires the SDK package
+    // `platforms;android-37.0` to be installed.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

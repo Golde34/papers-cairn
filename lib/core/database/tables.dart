@@ -60,8 +60,12 @@ class PaperProjects extends Table {
 }
 
 class PaperRelations extends Table {
+  // Both columns point at Papers, so drift needs distinct names for the
+  // back-references or it generates neither.
+  @ReferenceName('outgoingRelations')
   IntColumn get fromId =>
       integer().references(Papers, #id, onDelete: KeyAction.cascade)();
+  @ReferenceName('incomingRelations')
   IntColumn get toId =>
       integer().references(Papers, #id, onDelete: KeyAction.cascade)();
 

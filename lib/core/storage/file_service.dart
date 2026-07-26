@@ -81,7 +81,9 @@ class FileService {
     DateTime? publishedAt,
   }) {
     final parts = <String>[
-      arxivId,
+      // Pre-2007 ids carry their archive and a slash, e.g. `hep-th/9901001`.
+      // Left alone that slash makes this a path, not a file name.
+      _sanitize(arxivId),
       _truncate(_sanitize(title), 80),
       if (authors.isNotEmpty)
         [

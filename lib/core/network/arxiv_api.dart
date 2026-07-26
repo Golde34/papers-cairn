@@ -100,20 +100,26 @@ class ArxivApi {
       if (body == null || body.isEmpty) {
         throw ArxivException('arXiv returned an empty response');
       }
-
-      final XmlDocument document;
-      try {
-        document = XmlDocument.parse(body);
-      } on XmlException catch (e) {
-        throw ArxivException('arXiv returned malformed XML: ${e.message}');
-      }
-
-      return document
-          .findAllElements('entry')
-          .map(_parseEntry)
-          .nonNulls
-          .toList(growable: false);
+      return parseFeed(body);
     });
+  }
+
+  /// Public so the parser can be tested against a captured response without
+  /// standing up an HTTP mock. This is the part most likely to break when arXiv
+  /// changes its output.
+  List<ArxivPaper> parseFeed(String body) {
+    final XmlDocument document;
+    try {
+      document = XmlDocument.parse(body);
+    } on XmlException catch (e) {
+      throw ArxivException('arXiv returned malformed XML: ${e.message}');
+    }
+
+    return document
+        .findAllElements('entry')
+        .map(_parseEntry)
+        .nonNulls
+        .toList(growable: false);
   }
 
   ArxivPaper? _parseEntry(XmlElement entry) {
