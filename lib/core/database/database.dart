@@ -8,7 +8,16 @@ export 'tables.dart';
 part 'database.g.dart';
 
 @DriftDatabase(
-  tables: [Papers, Projects, PaperProjects, PaperRelations, Annotations],
+  tables: [
+    Papers,
+    Projects,
+    PaperProjects,
+    PaperRelations,
+    Annotations,
+    Boards,
+    Strokes,
+    BoardItems,
+  ],
 )
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(driftDatabase(name: 'cairn'));
@@ -16,7 +25,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -26,6 +35,13 @@ class AppDatabase extends _$AppDatabase {
         // need to remember the page you stopped on.
         await m.createTable(annotations);
         await m.addColumn(papers, papers.lastPage);
+      }
+      if (from < 3) {
+        await m.createTable(boards);
+        await m.createTable(strokes);
+      }
+      if (from < 4) {
+        await m.createTable(boardItems);
       }
     },
     beforeOpen: (details) async {

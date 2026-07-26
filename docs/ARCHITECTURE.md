@@ -112,12 +112,26 @@ PaperProject   paperId, projectId, note        -- why this paper is in this proj
 PaperRelation  fromId, toId, note              -- why these two papers are connected
 Annotation     id, paperId, pageNumber, quotedText, rectsJson, colorValue,
                note, createdAt                 -- a highlight, and why it matters
+Board          id, title, projectId, createdAt, updatedAt
+Stroke         id, boardId, pointsJson, colorValue, width, createdAt
 ```
 
 Both join tables carry a free-text `note`. That is the point of the app: a link with no
 stated reason is barely worth more than no link. `progressNote` is prose ("stuck on the
 proof of Lemma 3") rather than a percentage, because prose is what actually helps when you
 come back three weeks later.
+
+A **board** is an unbounded surface to think on — sketch the argument, draw the arrows,
+scribble the question you cannot yet phrase. It is deliberately not a project: a project is
+a tidy list of what you are reading, while a board is the working-out a list cannot hold. A
+board may belong to a project or float free.
+
+`Stroke.pointsJson` holds `[[x,y], ...]` in **board coordinates**, so a line drawn zoomed
+right in stays put when you zoom back out. Coordinates are rounded to a tenth of a unit —
+a finger does not carry the precision the touchscreen reports, and the full doubles triple
+the stored size for no visible gain. The surface is a very large finite square with the
+view starting at its centre, which behaves like an infinite plane unless somebody draws for
+several kilometres.
 
 `Annotation.rectsJson` holds `[[left,top,right,bottom], ...]` in **PDF page coordinates**:
 origin bottom-left, y increasing upward, so `top` is numerically above `bottom`. Page

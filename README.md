@@ -37,12 +37,15 @@ flutter analyze
 - Download the PDF and read it in the app, resuming on the page you left
 - Highlight text in five colours and attach a note to any highlight
 - Search across titles, authors, abstracts, your notes, and your highlights
+- Draw on boards: an unbounded surface for sketching how the ideas fit together,
+  optionally tied to a project
 
 ## What it does not do yet
 
-No citation graph, no BibTeX or Obsidian export, no sync between devices, no freehand ink
-or sticky notes on the page. The iOS share sheet also needs a Share Extension target that
-does not exist yet — sharing in works on Android only for now.
+Boards take ink and nothing else yet — no text blocks, and no pinning papers onto them.
+Beyond that: no citation graph, no BibTeX or Obsidian export, no sync between devices, no
+ink on PDF pages. The iOS share sheet also needs a Share Extension target that does not
+exist yet — sharing in works on Android only for now.
 
 ## Layout
 

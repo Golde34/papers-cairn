@@ -38,6 +38,70 @@ class Papers extends Table {
   IntColumn get lastPage => integer().nullable()();
 }
 
+/// A boundless surface for thinking on: sketches, arrows, scribbled questions,
+/// and — once the next part lands — the papers themselves pinned into place.
+///
+/// Separate from projects on purpose. A project is a tidy list of what you are
+/// reading; a board is the messy working-out that a list cannot hold. A board
+/// may belong to a project, or float free.
+class Boards extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  TextColumn get title => text()();
+  IntColumn get projectId => integer()
+      .nullable()
+      .references(Projects, #id, onDelete: KeyAction.setNull)();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+}
+
+/// One pen stroke on a board.
+///
+/// Points are in board coordinates, not screen coordinates, so a stroke drawn
+/// zoomed right in stays where it was put when you zoom back out. The board has
+/// no edges, so these are unbounded in every direction including negative.
+class Strokes extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get boardId =>
+      integer().references(Boards, #id, onDelete: KeyAction.cascade)();
+
+  /// `[[x,y], ...]` along the stroke, in board coordinates.
+  TextColumn get pointsJson => text()();
+
+  IntColumn get colorValue => integer()();
+  RealColumn get width => real()();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
+enum BoardItemKind { text, paper }
+
+/// Something placed on a board that is not ink: a written note, or a paper
+/// pinned in from the library.
+///
+/// A pinned paper is a reference, not a copy — it carries only [paperId], so the
+/// card always shows the paper's current title and opens the real thing. Cascade
+/// delete means removing a paper from the library takes its cards with it rather
+/// than leaving cards pointing at nothing.
+class BoardItems extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  IntColumn get boardId =>
+      integer().references(Boards, #id, onDelete: KeyAction.cascade)();
+  TextColumn get kind => textEnum<BoardItemKind>()();
+
+  /// Top-left corner in board coordinates, same space as [Strokes].
+  RealColumn get x => real()();
+  RealColumn get y => real()();
+
+  /// Width in board units. Height is left to the content — a note should grow
+  /// as it is written rather than scroll inside a fixed box.
+  RealColumn get width => real()();
+
+  TextColumn get text => text().withDefault(const Constant(''))();
+  IntColumn get paperId =>
+      integer().nullable().references(Papers, #id, onDelete: KeyAction.cascade)();
+  IntColumn get colorValue => integer()();
+  DateTimeColumn get createdAt => dateTime()();
+}
+
 /// A highlight in a paper, with an optional note attached.
 ///
 /// Deliberately stored here rather than written into the PDF file. Annotations

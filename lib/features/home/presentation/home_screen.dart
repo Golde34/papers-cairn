@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/share/share_receiver.dart';
+import '../../boards/presentation/boards_tab.dart';
 import '../../papers/data/paper_repository.dart';
 import '../../papers/presentation/add_paper_sheet.dart';
 import '../../papers/presentation/widgets/paper_tile.dart';
@@ -18,7 +19,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _tab = 0;
 
-  static const _titles = ['Reading', 'Inbox', 'Projects'];
+  static const _titles = ['Reading', 'Inbox', 'Projects', 'Boards'];
 
   @override
   void initState() {
@@ -70,12 +71,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: IndexedStack(
         index: _tab,
-        children: const [_ReadingTab(), _InboxTab(), ProjectsTab()],
+        children: const [
+          _ReadingTab(),
+          _InboxTab(),
+          ProjectsTab(),
+          BoardsTab(),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _tab == 2
-            ? showCreateProjectSheet(context)
-            : showAddPaperSheet(context),
+        onPressed: () => switch (_tab) {
+          2 => showCreateProjectSheet(context),
+          3 => showCreateBoardSheet(context),
+          _ => showAddPaperSheet(context),
+        },
         child: const Icon(Icons.add),
       ),
       bottomNavigationBar: NavigationBar(
@@ -96,6 +104,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             icon: Icon(Icons.folder_outlined),
             selectedIcon: Icon(Icons.folder),
             label: 'Projects',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.gesture_outlined),
+            selectedIcon: Icon(Icons.gesture),
+            label: 'Boards',
           ),
         ],
       ),

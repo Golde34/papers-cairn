@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../features/boards/presentation/board_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/papers/presentation/paper_detail_screen.dart';
 import '../../features/papers/presentation/search_screen.dart';
@@ -27,6 +28,10 @@ final appRouter = GoRouter(
       path: '/project/:id',
       builder: (_, state) =>
           _withIntId(state, (id) => ProjectDetailScreen(projectId: id)),
+    ),
+    GoRoute(
+      path: '/board/:id',
+      builder: (_, state) => _withIntId(state, (id) => BoardScreen(boardId: id)),
     ),
   ],
 );
