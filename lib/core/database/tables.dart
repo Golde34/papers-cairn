@@ -46,6 +46,12 @@ class Papers extends Table {
   IntColumn get lastPage => integer().nullable()();
 }
 
+/// The ruling under a board, the way a notebook is bought lined or squared.
+///
+/// Per board rather than per app: working out a proof wants squares, drafting
+/// prose wants lines, and a diagram usually wants neither.
+enum BoardBackground { dots, lines, grid, blank }
+
 /// A boundless surface for thinking on: sketches, arrows, scribbled questions,
 /// and — once the next part lands — the papers themselves pinned into place.
 ///
@@ -58,6 +64,8 @@ class Boards extends Table {
   IntColumn get projectId => integer()
       .nullable()
       .references(Projects, #id, onDelete: KeyAction.setNull)();
+  TextColumn get background =>
+      textEnum<BoardBackground>().withDefault(const Constant('dots'))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 }

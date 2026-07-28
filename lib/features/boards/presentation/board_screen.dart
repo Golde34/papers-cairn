@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/database/database.dart';
 import '../../papers/data/paper_repository.dart';
 import '../data/board_repository.dart';
+import 'board_background.dart';
 import 'board_items.dart';
 
 enum BoardTool { pan, pen, eraser }
@@ -276,6 +277,55 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         );
   }
 
+  /// Applies each choice on the spot rather than behind an OK button. Ruling is
+  /// something you judge by looking at it, and the sheet leaves the board visible
+  /// while you do.
+  Future<void> _chooseBackground(BoardBackground current) async {
+    var selected = current;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (_, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Paper style',
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 16),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      for (final option in BoardBackground.values)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 14),
+                          child: BoardBackgroundPreview(
+                            style: option,
+                            selected: option == selected,
+                            onTap: () {
+                              setSheetState(() => selected = option);
+                              ref
+                                  .read(boardRepositoryProvider)
+                                  .setBackground(widget.boardId, option);
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _rename(String current) async {
     final controller = TextEditingController(text: current);
     final title = await showDialog<String>(
@@ -402,11 +452,15 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (value) => switch (value) {
+              'paper' => _chooseBackground(
+                board?.background ?? BoardBackground.dots,
+              ),
               'rename' => _rename(board?.title ?? ''),
               'clear' => _confirmClearInk(),
               _ => _confirmDeleteBoard(board?.title),
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'paper', child: Text('Paper style')),
               PopupMenuItem(value: 'rename', child: Text('Rename board')),
               PopupMenuItem(value: 'clear', child: Text('Erase all ink')),
               PopupMenuItem(value: 'delete', child: Text('Delete board')),
@@ -439,10 +493,11 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                   children: [
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _GridPainter(
+                        painter: _BackgroundPainter(
                           transform: _transform,
                           viewport: _viewport,
                           color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
+                          style: board?.background ?? BoardBackground.dots,
                         ),
                       ),
                     ),
@@ -554,27 +609,27 @@ double _distanceToSegment(Offset p, Offset a, Offset b) {
   return (p - Offset(a.dx + t * dx, a.dy + t * dy)).distance;
 }
 
-/// The dot grid that gives an otherwise featureless canvas a sense of place.
+/// The ruling that gives an otherwise featureless canvas a sense of place.
 ///
-/// Only the dots actually on screen are drawn. The board is fifty thousand units
-/// square, so covering all of it would mean millions of dots for the handful
+/// Only the part actually on screen is drawn. The board is fifty thousand units
+/// square, so covering all of it would mean millions of marks for the handful
 /// anyone can see.
-class _GridPainter extends CustomPainter {
-  _GridPainter({
+class _BackgroundPainter extends CustomPainter {
+  _BackgroundPainter({
     required this.transform,
     required this.viewport,
     required this.color,
+    required this.style,
   }) : super(repaint: transform);
 
   final TransformationController transform;
   final Size viewport;
   final Color color;
-
-  static const _baseSpacing = 40.0;
+  final BoardBackground style;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (viewport.isEmpty) return;
+    if (viewport.isEmpty || style == BoardBackground.blank) return;
 
     final inverse = Matrix4.copy(transform.value);
     if (inverse.invert() == 0) return;
@@ -590,32 +645,20 @@ class _GridPainter extends CustomPainter {
     final scale = transform.value.getMaxScaleOnAxis();
     if (scale <= 0) return;
 
-    // Zooming out doubles the spacing rather than crowding the dots into a
-    // grey wash; zooming in keeps them from drifting metres apart.
-    var spacing = _baseSpacing;
-    while (spacing * scale < 18) {
-      spacing *= 2;
-    }
-    while (spacing * scale > 72) {
-      spacing /= 2;
-    }
-
-    final paint = Paint()..color = color;
-    final radius = math.min(1.4 / scale, spacing / 16);
-
-    final firstX = (visible.left / spacing).floorToDouble() * spacing;
-    final firstY = (visible.top / spacing).floorToDouble() * spacing;
-
-    for (var x = firstX; x <= visible.right; x += spacing) {
-      for (var y = firstY; y <= visible.bottom; y += spacing) {
-        canvas.drawCircle(Offset(x, y), radius, paint);
-      }
-    }
+    paintBoardPattern(
+      canvas: canvas,
+      area: visible,
+      style: style,
+      color: color,
+      spacing: adaptiveSpacing(style.baseSpacing, scale),
+      // Marks stay one screen pixel wide however far in or out you are.
+      strokeScale: 1 / scale,
+    );
   }
 
   @override
-  bool shouldRepaint(_GridPainter old) =>
-      old.viewport != viewport || old.color != color;
+  bool shouldRepaint(_BackgroundPainter old) =>
+      old.viewport != viewport || old.color != color || old.style != style;
 }
 
 class _StrokesPainter extends CustomPainter {

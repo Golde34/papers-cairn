@@ -26,7 +26,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -52,6 +52,9 @@ class AppDatabase extends _$AppDatabase {
         // SQLite cannot relax NOT NULL in place, so drift rebuilds the table
         // and copies the rows across.
         await m.alterTable(TableMigration(papers));
+      }
+      if (from < 7) {
+        await m.addColumn(boards, boards.background);
       }
     },
     beforeOpen: (details) async {

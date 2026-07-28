@@ -60,6 +60,14 @@ class BoardRepository {
         );
   }
 
+  Future<void> setBackground(int id, BoardBackground background) =>
+      (_db.update(_db.boards)..where((b) => b.id.equals(id))).write(
+        BoardsCompanion(
+          background: Value(background),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
   Future<void> rename(int id, String title) =>
       (_db.update(_db.boards)..where((b) => b.id.equals(id))).write(
         BoardsCompanion(
