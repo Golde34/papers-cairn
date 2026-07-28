@@ -43,13 +43,6 @@ later. The counter in the corner tracks how many you have made.
 
 ![Text highlighted in the reader](docs/screenshots/highlight.png)
 
-## Boards
-
-A boundless surface for working something out: sketch the argument, draw the arrows, and
-pin the actual papers into place among them. Tapping a pinned card opens the paper.
-
-![A board with handwriting and a pinned paper](docs/screenshots/board.png)
-
 ---
 
 ## Running it
