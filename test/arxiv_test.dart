@@ -62,6 +62,33 @@ void main() {
     });
   });
 
+  group('extractArxivIdFromFileName', () {
+    test('reads the id a browser saves an arXiv download under', () {
+      expect(
+        extractArxivIdFromFileName('/storage/Download/2103.00020v1.pdf'),
+        '2103.00020v1',
+      );
+      expect(extractArxivIdFromFileName('2103.00020.pdf'), '2103.00020');
+      expect(extractArxivIdFromFileName('1304.1000v1.PDF'), '1304.1000v1');
+    });
+
+    test('still reads a name that spells the id out', () {
+      expect(
+        extractArxivIdFromFileName('arXiv:2103.00020 - CLIP.pdf'),
+        '2103.00020',
+      );
+    });
+
+    test('returns null for a file that names no paper', () {
+      expect(extractArxivIdFromFileName('/Download/thesis-final-v2.pdf'), isNull);
+      expect(extractArxivIdFromFileName('scan.pdf'), isNull);
+    });
+
+    test('does not mistake a plain version suffix for an id', () {
+      expect(extractArxivIdFromFileName('report-v2.pdf'), isNull);
+    });
+  });
+
   test('stripVersion drops the version suffix', () {
     expect(stripVersion('2103.00020v3'), '2103.00020');
     expect(stripVersion('2103.00020'), '2103.00020');

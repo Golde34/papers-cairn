@@ -32,6 +32,21 @@ String? extractArxivId(String input) {
   return null;
 }
 
+/// Pulls an arXiv identifier out of a file name.
+///
+/// A PDF downloaded from arXiv by a browser is saved as `2103.00020v1.pdf`, so
+/// the name alone says which paper it is. Recognising that is what lets a file
+/// shared in from the browser join the paper already in the library instead of
+/// arriving as a second copy of it.
+///
+/// Separate from [extractArxivId] because the bare-identifier patterns there are
+/// anchored to the whole string, and a file name has an extension on the end.
+String? extractArxivIdFromFileName(String path) {
+  final name = path.split('/').last;
+  final stem = name.replaceFirst(RegExp(r'\.pdf$', caseSensitive: false), '');
+  return extractArxivId(stem);
+}
+
 /// Strips the version suffix: `2103.00020v2` -> `2103.00020`. Used when checking
 /// whether a paper is already in the library, so re-sharing a different version
 /// of the same paper does not create a duplicate.

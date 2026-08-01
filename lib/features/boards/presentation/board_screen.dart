@@ -788,16 +788,31 @@ class _Toolbar extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTap: () => onWidth(option),
                 child: SizedBox(
-                  width: 44,
+                  width: 48,
                   child: Center(
+                    // The nib is shown by a filled disc behind it, not by
+                    // recolouring the dot. Dark green against near-black told
+                    // you almost nothing about which size was selected.
                     child: Container(
-                      width: math.max(option * 1.6, 6),
-                      height: math.max(option * 1.6, 6),
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: option == width
-                            ? scheme.primary
-                            : scheme.onSurfaceVariant,
+                            ? scheme.secondaryContainer
+                            : Colors.transparent,
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: math.max(option * 1.6, 6),
+                          height: math.max(option * 1.6, 6),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: option == width
+                                ? scheme.onSecondaryContainer
+                                : scheme.onSurfaceVariant,
+                          ),
+                        ),
                       ),
                     ),
                   ),

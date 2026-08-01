@@ -296,6 +296,61 @@ class PaperRepository {
     return (_db.select(_db.papers)..where((p) => p.id.equals(id))).getSingle();
   }
 
+  /// Gives a paper a PDF that is already on the device, instead of downloading
+  /// one.
+  ///
+  /// The paper's own metadata names the file, so a copy grabbed by a browser
+  /// under some opaque name lands in Cairn under the same readable name every
+  /// other paper gets.
+  Future<void> attachFile(int paperId, File source) async {
+    final paper = await (_db.select(
+      _db.papers,
+    )..where((p) => p.id.equals(paperId))).getSingle();
+
+    // Replace rather than accumulate: a paper has one PDF, and leaving the old
+    // one behind would orphan a file nothing points at.
+    final previous = paper.relativePath;
+    if (previous != null) await _files.delete(previous);
+
+    final relativePath = await _files.adopt(
+      source: source,
+      folderName: await _folderFor(paperId),
+      fileName: FileService.buildFileName(
+        arxivId: paper.arxivId,
+        title: paper.title,
+        authors: paper.authors.split('; '),
+        publishedAt: paper.publishedAt,
+      ),
+    );
+
+    await (_db.update(_db.papers)..where((p) => p.id.equals(paperId))).write(
+      PapersCompanion(relativePath: Value(relativePath)),
+    );
+  }
+
+  /// Saves an arXiv paper using a PDF the device already has.
+  ///
+  /// The metadata still comes from arXiv — a file name is not a paper — but the
+  /// bytes come from the file, so downloading a second copy of something already
+  /// sitting in the downloads folder is avoided.
+  Future<Paper> addFromArxivWithFile({
+    required String arxivId,
+    required File source,
+    int? projectId,
+  }) async {
+    final existing = await findByArxivId(arxivId);
+    final paper =
+        existing ?? await save((await preview(arxivId)).fetched, projectId: projectId);
+
+    if (existing != null && projectId != null) {
+      await addToProject(paper.id, projectId);
+    }
+
+    await attachFile(paper.id, source);
+    return (_db.select(_db.papers)..where((p) => p.id.equals(paper.id)))
+        .getSingle();
+  }
+
   /// The folder a paper's file belongs in: its first project, or the inbox.
   Future<String> _folderFor(int paperId) async {
     final projects = await watchProjectsOf(paperId).first;

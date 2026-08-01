@@ -16,11 +16,29 @@ class SharedArxivId extends SharedItem {
   final String arxivId;
 }
 
-/// A PDF shared from a file manager — a paper from somewhere other than arXiv.
+/// A PDF shared from a file manager.
+///
+/// [arxivId] is set when the file name gives the paper away — a browser saves an
+/// arXiv download as `2103.00020v1.pdf`. That turns a file share into "here is
+/// the PDF for this paper" rather than "here is some paper", which is what lets
+/// it join a paper already in the library instead of duplicating it.
 class SharedPdf extends SharedItem {
-  const SharedPdf(this.path, this.suggestedTitle);
+  const SharedPdf({
+    required this.path,
+    required this.suggestedTitle,
+    this.arxivId,
+  });
+
   final String path;
   final String suggestedTitle;
+  final String? arxivId;
+}
+
+/// Something arrived that Cairn cannot use. Reported rather than discarded, so
+/// the app never appears to swallow a share without explanation.
+class SharedUnrecognised extends SharedItem {
+  const SharedUnrecognised(this.payload);
+  final String payload;
 }
 
 /// Everything arriving from the OS share sheet.
@@ -58,27 +76,40 @@ class ShareReceiver {
 
   void _emit(List<SharedMediaFile> shared) {
     for (final item in shared) {
-      // For text and URL shares the payload rides in `path`; for a file share it
-      // really is a path.
+      // Type first, not the file extension. The plugin copies every shared file
+      // into a cache folder and the copy's name is not guaranteed to keep the
+      // `.pdf` on the end — an extension check drops those on the floor, and a
+      // share that vanishes without a word looks like the app aborted.
+      if (item.type == SharedMediaType.file) {
+        _controller.add(
+          SharedPdf(
+            path: item.path,
+            suggestedTitle: _titleFrom(item),
+            arxivId: extractArxivIdFromFileName(item.path),
+          ),
+        );
+        continue;
+      }
+
+      // Text and URL shares carry the payload in `path`.
       final arxivId = extractArxivId(item.path);
       if (arxivId != null) {
         _controller.add(SharedArxivId(arxivId));
         continue;
       }
 
-      if (item.path.toLowerCase().endsWith('.pdf')) {
-        _controller.add(SharedPdf(item.path, _titleFrom(item)));
-      }
+      // Deliberately not silent. Whatever arrives, the app says something about
+      // it rather than appearing to do nothing.
+      _controller.add(SharedUnrecognised(item.path));
     }
   }
 
-  /// The best guess at a name. The plugin sometimes hands over a temporary file
-  /// with a meaningless path, in which case the original name is the only thing
-  /// worth showing.
+  /// The best guess at a name, from the file name alone.
+  ///
+  /// `message` is not consulted: the plugin documents it as iOS-only, so on
+  /// Android it is always null and reading it first just hid the real source.
   String _titleFrom(SharedMediaFile item) {
-    final name = (item.message?.trim().isNotEmpty ?? false)
-        ? item.message!.trim()
-        : item.path.split('/').last;
+    final name = item.path.split('/').last;
     return name.replaceAll(RegExp(r'\.pdf$', caseSensitive: false), '').trim();
   }
 

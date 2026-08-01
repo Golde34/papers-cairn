@@ -42,23 +42,42 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final repository = ref.read(paperRepositoryProvider);
 
       try {
-        final paper = switch (item) {
-          SharedArxivId(:final arxivId) => await repository.addFromArxiv(
-            arxivId,
+        final (paper, note) = switch (item) {
+          SharedArxivId(:final arxivId) => (
+            await repository.addFromArxiv(arxivId),
+            'Saved',
           ),
-          // A PDF carries no metadata worth trusting, so the one thing that
-          // matters — what to call it — is asked before anything is written.
-          SharedPdf(:final path, :final suggestedTitle) => await _importShared(
-            repository,
-            path,
-            suggestedTitle,
+
+          // The file name gave the paper away. Its metadata comes from arXiv,
+          // its bytes from the file you already have — no second download, and
+          // no second copy of a paper the library is already holding.
+          SharedPdf(:final path, arxivId: final String id) =>
+            await _adoptSharedArxivPdf(repository, id, path),
+
+          // Nothing identifies it, so the one thing that matters — what to call
+          // it — is asked before anything is written.
+          SharedPdf(:final path, :final suggestedTitle) => (
+            await _importShared(repository, path, suggestedTitle),
+            'Imported',
           ),
+
+          SharedUnrecognised() => (null, ''),
         };
+
+        if (item is SharedUnrecognised) {
+          if (!mounted) return;
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Cairn takes arXiv links and PDF files.'),
+            ),
+          );
+          return;
+        }
 
         if (!mounted || paper == null) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text('Saved: ${paper.title}'),
+            content: Text('$note: ${paper.title}'),
             action: SnackBarAction(
               label: 'Open',
               onPressed: () => context.push('/paper/${paper.id}'),
@@ -71,6 +90,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
     receiver.start();
+  }
+
+  /// Whether the paper was already held has to be settled before saving, or the
+  /// answer is always "yes" and the message always says the wrong thing.
+  Future<(Paper?, String)> _adoptSharedArxivPdf(
+    PaperRepository repository,
+    String arxivId,
+    String path,
+  ) async {
+    final held = await repository.findByArxivId(arxivId) != null;
+    final paper = await repository.addFromArxivWithFile(
+      arxivId: arxivId,
+      source: File(path),
+    );
+    return (paper, held ? 'Attached your file to' : 'Saved with your file');
   }
 
   Future<Paper?> _importShared(
