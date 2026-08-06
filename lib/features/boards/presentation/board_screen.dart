@@ -8,18 +8,10 @@ import '../../../core/database/database.dart';
 import '../../papers/data/paper_repository.dart';
 import '../data/board_repository.dart';
 import 'board_background.dart';
+import 'strokes.dart';
 import 'board_items.dart';
 
 enum BoardTool { pan, pen, eraser }
-
-/// Sentinel for ink that follows the theme instead of committing to a colour.
-///
-/// A fixed neutral cannot work: near-white ink vanishes on a light board, and
-/// near-black vanishes on a dark one. Strokes stored with this value resolve to
-/// `colorScheme.onSurface` when painted, so a drawing stays readable through a
-/// theme change. Zero is safe as a sentinel because a real colour always carries
-/// an alpha channel and so is never zero.
-const defaultInkColorValue = 0;
 
 /// Mid-toned on purpose — these have to read against both a white board and a
 /// near-black one.
@@ -31,50 +23,9 @@ const _penColorValues = <int>[
   0xFFD81B60,
 ];
 
-Color resolveInk(int value, ColorScheme scheme) =>
-    value == defaultInkColorValue ? scheme.onSurface : Color(value);
-
 const _penWidths = <double>[2, 5, 12];
 
 const _toolbarHeight = 56.0;
-
-/// A stroke prepared for painting.
-///
-/// Built once when the stroke list changes, never inside `paint`. Decoding the
-/// JSON and rebuilding the path every frame — which is what the first version
-/// did — costs the whole drawing on each of sixty frames a second, and the board
-/// gets slower with every line added to it.
-class _DrawnStroke {
-  _DrawnStroke({
-    required this.id,
-    required this.points,
-    required this.path,
-    required this.paint,
-  });
-
-  factory _DrawnStroke.from(Stroke stroke, ColorScheme scheme) {
-    final points = decodePoints(stroke.pointsJson);
-    return _DrawnStroke(
-      id: stroke.id,
-      points: points,
-      path: buildStrokePath(points),
-      paint: Paint()
-        ..color = resolveInk(stroke.colorValue, scheme)
-        ..strokeWidth = stroke.width
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..isAntiAlias = true,
-    );
-  }
-
-  final int id;
-  final List<Offset> points;
-  final Path path;
-  final Paint paint;
-
-  double get width => paint.strokeWidth;
-}
 
 /// The stroke currently under the finger.
 ///
@@ -155,26 +106,13 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
   bool _centred = false;
   Size _viewport = Size.zero;
 
-  List<Stroke>? _cacheSource;
-  ColorScheme? _cacheScheme;
-  List<_DrawnStroke> _drawn = const [];
+  final _strokes = StrokeCache();
 
   @override
   void dispose() {
     _transform.dispose();
     _live.dispose();
     super.dispose();
-  }
-
-  /// Rebuilds the paint cache only when the stream emits a new list, or when the
-  /// theme flips and default-ink strokes have to resolve to a new colour.
-  void _syncCache(List<Stroke> strokes, ColorScheme scheme) {
-    if (identical(strokes, _cacheSource) && scheme == _cacheScheme) return;
-    _cacheSource = strokes;
-    _cacheScheme = scheme;
-    _drawn = strokes
-        .map((stroke) => _DrawnStroke.from(stroke, scheme))
-        .toList(growable: false);
   }
 
   /// The canvas is a large square rather than a truly infinite plane, so the
@@ -406,7 +344,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
 
   void _eraseAt(Offset point) {
     // Newest first: the stroke on top is the one the eye expects to lose.
-    for (final stroke in _drawn.reversed) {
+    for (final stroke in _strokes.drawn.reversed) {
       if (_hits(stroke.points, point, stroke.width / 2 + 8)) {
         ref
             .read(boardRepositoryProvider)
@@ -425,7 +363,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
     // listener has no value yet, and the picker would find the library empty.
     ref.watch(allPapersProvider);
     final scheme = Theme.of(context).colorScheme;
-    _syncCache(strokes, scheme);
+    _strokes.sync(strokes, scheme);
 
     return Scaffold(
       appBar: AppBar(
@@ -508,7 +446,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                     ),
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _StrokesPainter(_drawn),
+                        painter: _StrokesPainter(_strokes.drawn),
                         foregroundPainter: _LivePainter(
                           live: _live,
                           color: resolveInk(_colorValue, scheme),
@@ -570,26 +508,6 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
       ),
     );
   }
-}
-
-/// Curves through the midpoints of consecutive samples. Joining the samples
-/// with straight lines makes a fast stroke look like a polygon.
-Path buildStrokePath(List<Offset> points) {
-  final path = Path();
-  if (points.isEmpty) return path;
-
-  path.moveTo(points.first.dx, points.first.dy);
-  if (points.length < 3) {
-    path.lineTo(points.last.dx, points.last.dy);
-    return path;
-  }
-
-  for (var i = 1; i < points.length - 1; i++) {
-    final midpoint = (points[i] + points[i + 1]) / 2;
-    path.quadraticBezierTo(points[i].dx, points[i].dy, midpoint.dx, midpoint.dy);
-  }
-  path.lineTo(points.last.dx, points.last.dy);
-  return path;
 }
 
 bool _hits(List<Offset> points, Offset probe, double tolerance) {
@@ -669,7 +587,7 @@ class _BackgroundPainter extends CustomPainter {
 class _StrokesPainter extends CustomPainter {
   const _StrokesPainter(this.strokes);
 
-  final List<_DrawnStroke> strokes;
+  final List<DrawnStroke> strokes;
 
   @override
   void paint(Canvas canvas, Size size) {
