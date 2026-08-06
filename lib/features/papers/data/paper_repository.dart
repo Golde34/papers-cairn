@@ -33,12 +33,6 @@ class PaperRepository {
   Stream<List<Paper>> watchAll() =>
       (_db.select(_db.papers)..orderBy([_byRecency])).watch();
 
-  Stream<List<Paper>> watchByStatus(ReadingStatus status) =>
-      (_db.select(_db.papers)
-            ..where((p) => p.status.equalsValue(status))
-            ..orderBy([_byRecency]))
-          .watch();
-
   Stream<Paper?> watchById(int id) =>
       (_db.select(_db.papers)..where((p) => p.id.equals(id)))
           .watchSingleOrNull();
@@ -442,25 +436,29 @@ final unfiledPapersProvider = StreamProvider<List<Paper>>(
   (ref) => ref.watch(paperRepositoryProvider).watchUnfiled(),
 );
 
-final readingPapersProvider = StreamProvider<List<Paper>>(
-  (ref) =>
-      ref.watch(paperRepositoryProvider).watchByStatus(ReadingStatus.reading),
-);
+// Every family provider below is auto-disposing. Riverpod keeps one instance per
+// argument and, left alone, keeps it for the life of the app — so each paper
+// ever opened would hold an open database query forever, and drift re-runs every
+// live query on the table whenever anything writes to it. Auto-dispose closes
+// them when the last widget looks away.
 
 final paperProvider = StreamProvider.family<Paper?, int>(
   (ref, id) => ref.watch(paperRepositoryProvider).watchById(id),
+  isAutoDispose: true,
 );
 
 final papersOfProjectProvider = StreamProvider.family<List<Paper>, int>(
   (ref, projectId) =>
       ref.watch(paperRepositoryProvider).watchByProject(projectId),
+  isAutoDispose: true,
 );
 
 final projectsOfPaperProvider = StreamProvider.family<List<Project>, int>(
   (ref, paperId) => ref.watch(paperRepositoryProvider).watchProjectsOf(paperId),
+  isAutoDispose: true,
 );
 
-final relatedPapersProvider =
-    StreamProvider.family<List<(Paper, String)>, int>(
-      (ref, paperId) => ref.watch(paperRepositoryProvider).watchRelated(paperId),
-    );
+final relatedPapersProvider = StreamProvider.family<List<(Paper, String)>, int>(
+  (ref, paperId) => ref.watch(paperRepositoryProvider).watchRelated(paperId),
+  isAutoDispose: true,
+);

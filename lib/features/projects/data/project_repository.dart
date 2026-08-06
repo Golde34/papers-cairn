@@ -37,11 +37,6 @@ class ProjectRepository {
     return (await findById(id))!;
   }
 
-  Future<void> rename(int id, String name) =>
-      (_db.update(_db.projects)..where((p) => p.id.equals(id))).write(
-        ProjectsCompanion(name: Value(name.trim())),
-      );
-
   /// Removes the project and its memberships. Papers survive, and so do any
   /// PDFs already on disk — deleting a folder of downloaded reading because a
   /// project was tidied away would be a nasty surprise.

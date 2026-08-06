@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'dart:async';
 import 'dart:io';
 
 import '../../../core/database/database.dart';
@@ -23,6 +24,11 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _tab = 0;
 
+  /// Held so it can be cancelled. An uncancelled subscription keeps this State —
+  /// and the BuildContext it closes over — alive after the widget is gone, and
+  /// every hot restart used to stack another listener on top of the last.
+  StreamSubscription<SharedItem>? _shares;
+
   static const _titles = ['Library', 'Projects', 'Boards'];
 
   @override
@@ -31,12 +37,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _listenForShares();
   }
 
+  @override
+  void dispose() {
+    _shares?.cancel();
+    super.dispose();
+  }
+
   /// Papers shared from the browser are fetched immediately and land in the
-  /// inbox. Filing them is a separate, later decision — interrupting with a
-  /// project picker at share time defeats the point of a one-tap capture.
+  /// library unfiled. Filing them is a separate, later decision — interrupting
+  /// with a project picker at share time defeats the point of a one-tap capture.
   void _listenForShares() {
     final receiver = ref.read(shareReceiverProvider);
-    receiver.items.listen((item) async {
+    _shares = receiver.items.listen((item) async {
       if (!mounted) return;
       final messenger = ScaffoldMessenger.of(context);
       final repository = ref.read(paperRepositoryProvider);

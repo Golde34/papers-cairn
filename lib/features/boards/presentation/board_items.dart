@@ -318,43 +318,50 @@ class _PaperCard extends ConsumerWidget {
 /// Edits a note in a sheet rather than in place on the canvas. Inline editing
 /// inside a zoomed, panned transform puts the caret and the keyboard in the
 /// wrong places at anything other than 100%.
-Future<String?> showBoardNoteEditor(BuildContext context, String initial) {
+Future<String?> showBoardNoteEditor(
+  BuildContext context,
+  String initial,
+) async {
   final controller = TextEditingController(text: initial);
-  return showModalBottomSheet<String>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) => Padding(
-      padding: EdgeInsets.fromLTRB(
-        16,
-        16,
-        16,
-        MediaQuery.viewInsetsOf(sheetContext).bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          TextField(
-            controller: controller,
-            autofocus: true,
-            maxLines: null,
-            minLines: 3,
-            textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              hintText: 'the thing you are trying to work out…',
-              border: OutlineInputBorder(),
+  try {
+    return await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          16,
+          16,
+          MediaQuery.viewInsetsOf(sheetContext).bottom + 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: null,
+              minLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: 'the thing you are trying to work out…',
+                border: OutlineInputBorder(),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(sheetContext).pop(controller.text.trimRight()),
-            child: const Text('Save'),
-          ),
-        ],
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(sheetContext).pop(controller.text.trimRight()),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  } finally {
+    controller.dispose();
+  }
 }
 
 /// Picks a paper from the library to pin onto the board.

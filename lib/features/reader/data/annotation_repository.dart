@@ -76,10 +76,6 @@ class AnnotationRepository {
       (_db.update(_db.annotations)..where((a) => a.id.equals(id)))
           .write(AnnotationsCompanion(note: Value(note)));
 
-  Future<void> setColor(int id, int colorValue) =>
-      (_db.update(_db.annotations)..where((a) => a.id.equals(id)))
-          .write(AnnotationsCompanion(colorValue: Value(colorValue)));
-
   Future<void> delete(int id) =>
       (_db.delete(_db.annotations)..where((a) => a.id.equals(id))).go();
 }
@@ -88,7 +84,9 @@ final annotationRepositoryProvider = Provider<AnnotationRepository>(
   (ref) => AnnotationRepository(ref.watch(databaseProvider)),
 );
 
+/// Auto-disposing: a paper closed should stop watching its own highlights.
 final annotationsProvider = StreamProvider.family<List<Annotation>, int>(
   (ref, paperId) =>
       ref.watch(annotationRepositoryProvider).watchForPaper(paperId),
+  isAutoDispose: true,
 );

@@ -11,31 +11,40 @@ import '../data/paper_repository.dart';
 ///
 /// A file name is the only clue a PDF carries, so it seeds the field rather than
 /// becoming the title outright — filenames are rarely what you would call a paper.
-Future<String?> showImportTitleDialog(BuildContext context, String suggestion) {
+Future<String?> showImportTitleDialog(
+  BuildContext context,
+  String suggestion,
+) async {
+  // Disposed in a finally: a controller created for a dialog outlives it
+  // otherwise, and this one is created afresh every time the dialog opens.
   final controller = TextEditingController(text: suggestion);
-  return showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('What is this paper called?'),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        maxLines: null,
-        textCapitalization: TextCapitalization.sentences,
+  try {
+    return await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('What is this paper called?'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: null,
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(controller.text.trim()),
+            child: const Text('Import'),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () =>
-              Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: const Text('Import'),
-        ),
-      ],
-    ),
-  );
+    );
+  } finally {
+    controller.dispose();
+  }
 }
 
 /// Adds a paper from a pasted id, URL, or citation string.

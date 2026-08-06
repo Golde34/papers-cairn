@@ -208,14 +208,21 @@ final boardsProvider = StreamProvider<List<Board>>(
   (ref) => ref.watch(boardRepositoryProvider).watchAll(),
 );
 
+// Auto-disposing: a board left behind should not keep watching its own strokes.
+// Without this, visiting ten boards leaves ten live queries that every later
+// pen stroke re-runs.
+
 final boardProvider = StreamProvider.family<Board?, int>(
   (ref, id) => ref.watch(boardRepositoryProvider).watchById(id),
+  isAutoDispose: true,
 );
 
 final strokesProvider = StreamProvider.family<List<Stroke>, int>(
   (ref, boardId) => ref.watch(boardRepositoryProvider).watchStrokes(boardId),
+  isAutoDispose: true,
 );
 
 final boardItemsProvider = StreamProvider.family<List<BoardItem>, int>(
   (ref, boardId) => ref.watch(boardRepositoryProvider).watchItems(boardId),
+  isAutoDispose: true,
 );
