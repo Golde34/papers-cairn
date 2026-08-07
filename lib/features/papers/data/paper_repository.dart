@@ -199,18 +199,27 @@ class PaperRepository {
           ))
           .go();
 
-  Stream<List<Project>> watchProjectsOf(int paperId) {
-    final query = _db.select(_db.projects).join([
-      innerJoin(
-        _db.paperProjects,
-        _db.paperProjects.projectId.equalsExp(_db.projects.id),
-      ),
-    ])..where(_db.paperProjects.paperId.equals(paperId));
+  Stream<List<Project>> watchProjectsOf(int paperId) =>
+      _projectsOfQuery(paperId).watch().map(_readProjects);
 
-    return query.watch().map(
-      (rows) => rows.map((row) => row.readTable(_db.projects)).toList(),
-    );
-  }
+  /// The same thing read once, for callers that just need an answer now.
+  ///
+  /// Taking `.first` off the watching version instead built a live query, opened
+  /// a subscription, read one value and tore it all down again — work with a
+  /// stream's cost and none of its point.
+  Future<List<Project>> projectsOf(int paperId) =>
+      _projectsOfQuery(paperId).get().then(_readProjects);
+
+  JoinedSelectStatement<HasResultSet, dynamic> _projectsOfQuery(int paperId) =>
+      _db.select(_db.projects).join([
+        innerJoin(
+          _db.paperProjects,
+          _db.paperProjects.projectId.equalsExp(_db.projects.id),
+        ),
+      ])..where(_db.paperProjects.paperId.equals(paperId));
+
+  List<Project> _readProjects(List<TypedResult> rows) =>
+      [for (final row in rows) row.readTable(_db.projects)];
 
   // --- relations ------------------------------------------------------------
 
@@ -235,22 +244,31 @@ class PaperRepository {
   /// Related papers with the reason for each link. Relations are stored once but
   /// read in both directions, so a link made from either side shows on both.
   Stream<List<(Paper, String)>> watchRelated(int paperId) {
-    final query = _db.select(_db.paperRelations)
-      ..where((r) => r.fromId.equals(paperId) | r.toId.equals(paperId));
+    // One join rather than a query per relation. Fetching each related paper in
+    // its own round trip meant a paper with ten links cost eleven queries, and
+    // every one of them ran again each time the relations table changed.
+    //
+    // A relation is stored once but read from either end, so the join matches
+    // the paper on whichever side of it is not this one.
+    final query = _db.select(_db.paperRelations).join([
+      innerJoin(
+        _db.papers,
+        (_db.paperRelations.fromId.equals(paperId) &
+                _db.papers.id.equalsExp(_db.paperRelations.toId)) |
+            (_db.paperRelations.toId.equals(paperId) &
+                _db.papers.id.equalsExp(_db.paperRelations.fromId)),
+      ),
+    ])..where(
+      _db.paperRelations.fromId.equals(paperId) |
+          _db.paperRelations.toId.equals(paperId),
+    );
 
-    return query.watch().asyncMap((relations) async {
-      final result = <(Paper, String)>[];
-      for (final relation in relations) {
-        final otherId = relation.fromId == paperId
-            ? relation.toId
-            : relation.fromId;
-        final other = await (_db.select(
-          _db.papers,
-        )..where((p) => p.id.equals(otherId))).getSingleOrNull();
-        if (other != null) result.add((other, relation.note));
-      }
-      return result;
-    });
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          (row.readTable(_db.papers), row.readTable(_db.paperRelations).note),
+      ],
+    );
   }
 
   /// Adopts a PDF already on the device — a paper from somewhere other than
@@ -346,10 +364,8 @@ class PaperRepository {
   }
 
   /// The folder a paper's file belongs in: its first project, or the inbox.
-  Future<String> _folderFor(int paperId) async {
-    final projects = await watchProjectsOf(paperId).first;
-    return projects.firstOrNull?.folderName ?? inboxFolderName;
-  }
+  Future<String> _folderFor(int paperId) async =>
+      (await projectsOf(paperId)).firstOrNull?.folderName ?? inboxFolderName;
 
   // --- files ----------------------------------------------------------------
 

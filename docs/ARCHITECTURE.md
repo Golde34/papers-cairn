@@ -172,6 +172,27 @@ until there is a reason to pay for it.
 **Store paths relative to the documents directory, never absolute.** iOS changes the app
 container path on every update; an absolute path saved today is a dead path tomorrow.
 
+## Things that were slow, and why
+
+Four costs that only show up once the app holds real work, all of them fixed:
+
+**Family providers do not auto-dispose by default.** Riverpod keeps one provider
+instance per argument value and, left alone, keeps it for the life of the app. Since drift
+re-runs every live query on a table whenever that table is written, ten boards visited meant
+ten stroke queries re-running on every pen stroke. Every `.family` here passes
+`isAutoDispose: true`.
+
+**Preparing strokes for painting is cached by id, not rebuilt.** Strokes are immutable once
+written, so `StrokeCache` keeps what it has already decoded and pathed. Rebuilding the list
+wholesale made the two-hundredth line on a board cost two hundred rebuilds — the board got
+slower the more was drawn on it. `test/stroke_cache_test.dart` counts the builds.
+
+**The live stroke extends its path segment by segment.** Rebuilding the path from every
+point each frame makes a stroke cost time proportional to its own length.
+
+**Related papers come back in one join.** Fetching each in its own query meant a paper with
+ten links cost eleven round trips, repeated whenever the relations table changed.
+
 ## Known traps
 
 - **arXiv redirects plain HTTP to HTTPS** (301). Always call
