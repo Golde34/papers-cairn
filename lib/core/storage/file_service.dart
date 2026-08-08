@@ -19,6 +19,30 @@ class FileService {
   Future<Directory> _root() async =>
       _cachedRoot ??= await getApplicationDocumentsDirectory();
 
+  /// The directory the app writes into.
+  ///
+  /// Exposed because a screen that lists files has to be able to say where they
+  /// are: on Android the path is under `/data/…` and nobody would guess it.
+  Future<Directory> root() => _root();
+
+  /// Every file the app is holding, as paths relative to [root].
+  ///
+  /// Half-finished downloads are left out. A `.part` is a file the app is in the
+  /// middle of writing, not one it has.
+  Future<List<String>> list() async {
+    final root = await _root();
+    if (!await root.exists()) return const [];
+
+    final paths = <String>[];
+    await for (final entity in root.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      if (entity.path.endsWith('.part')) continue;
+      paths.add(p.relative(entity.path, from: root.path));
+    }
+    paths.sort();
+    return paths;
+  }
+
   /// Absolute path for a path stored in the database.
   ///
   /// Only ever call this at the moment of use. iOS rewrites the container path

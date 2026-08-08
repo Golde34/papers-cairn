@@ -272,14 +272,19 @@ class PaperRepository {
   }
 
   /// Adopts a PDF already on the device — a paper from somewhere other than
-  /// arXiv, downloaded by hand.
+  /// arXiv, or a document that is not a paper at all.
   ///
   /// The file is taken into Cairn's own storage, because a path into the
   /// device's downloads is not something the app can rely on still being there.
+  ///
+  /// [kind] decides how it is presented afterwards, not how it is stored: a
+  /// document reads in the same viewer and takes the same highlights, it just
+  /// stops pretending to have authors and an abstract.
   Future<Paper> importPdf({
     required File source,
     required String title,
     int? projectId,
+    EntryKind kind = EntryKind.paper,
   }) async {
     final id = await _db
         .into(_db.papers)
@@ -291,6 +296,7 @@ class PaperRepository {
             authors: '',
             abstractText: '',
             addedAt: DateTime.now(),
+            kind: Value(kind),
           ),
         );
 
@@ -307,6 +313,42 @@ class PaperRepository {
     );
     return (_db.select(_db.papers)..where((p) => p.id.equals(id))).getSingle();
   }
+
+  /// Puts a file that is already inside Cairn's storage into the library.
+  ///
+  /// No copy, unlike [importPdf]: the file is where it should be already. This
+  /// is how a PDF that outlived the paper it belonged to — or one dropped into
+  /// the folder by hand — gets a row again rather than sitting there unclaimed.
+  Future<Paper> adoptExisting({
+    required String relativePath,
+    required String title,
+  }) async {
+    final id = await _db
+        .into(_db.papers)
+        .insert(
+          PapersCompanion.insert(
+            title: title,
+            authors: '',
+            abstractText: '',
+            addedAt: DateTime.now(),
+            relativePath: Value(relativePath),
+            // A file found lying in the folder is a document until someone says
+            // otherwise. Nothing is known about it beyond its name.
+            kind: const Value(EntryKind.document),
+          ),
+        );
+    return (_db.select(_db.papers)..where((p) => p.id.equals(id))).getSingle();
+  }
+
+  /// Drops a paper's claim on a file without touching the paper.
+  ///
+  /// For the file that is already gone. The paper — its notes, its highlights,
+  /// its place in a project — is worth more than the download, and can be
+  /// downloaded again.
+  Future<void> forgetFile(int paperId) =>
+      (_db.update(_db.papers)..where((p) => p.id.equals(paperId))).write(
+        const PapersCompanion(relativePath: Value(null)),
+      );
 
   /// Gives a paper a PDF that is already on the device, instead of downloading
   /// one.

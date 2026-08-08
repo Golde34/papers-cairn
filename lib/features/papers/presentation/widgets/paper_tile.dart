@@ -17,9 +17,15 @@ class PaperTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    // A document has no authors and never will. Falling through to an empty
+    // line made an imported handout look like a paper that failed to load.
     final subtitle = paper.progressNote.isNotEmpty
         ? paper.progressNote
-        : paper.authors;
+        : paper.authors.isNotEmpty
+        ? paper.authors
+        : paper.kind == EntryKind.document
+        ? 'Document'
+        : 'No authors listed';
 
     return ListTile(
       onTap: () => context.push('/paper/${paper.id}'),

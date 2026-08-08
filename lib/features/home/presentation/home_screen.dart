@@ -125,9 +125,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     String path,
     String suggestedTitle,
   ) async {
-    final title = await showImportTitleDialog(context, suggestedTitle);
-    if (title == null || title.isEmpty) return null;
-    return repository.importPdf(source: File(path), title: title);
+    final choice = await showImportTitleDialog(context, suggestedTitle);
+    if (choice == null || choice.title.isEmpty) return null;
+    return repository.importPdf(
+      source: File(path),
+      title: choice.title,
+      kind: choice.kind,
+    );
   }
 
   @override
@@ -220,6 +224,8 @@ class _ThemeToggle extends ConsumerWidget {
 /// that is neither in progress nor top of mind.
 enum _LibraryFilter {
   all('All'),
+  papers('Papers'),
+  documents('Documents'),
   toRead('To read'),
   reading('Reading'),
   done('Done'),
@@ -231,6 +237,8 @@ enum _LibraryFilter {
 
   bool matches(Paper paper, Set<int> unfiledIds) => switch (this) {
     _LibraryFilter.all => true,
+    _LibraryFilter.papers => paper.kind == EntryKind.paper,
+    _LibraryFilter.documents => paper.kind == EntryKind.document,
     _LibraryFilter.toRead => paper.status == ReadingStatus.toRead,
     _LibraryFilter.reading => paper.status == ReadingStatus.reading,
     _LibraryFilter.done => paper.status == ReadingStatus.done,

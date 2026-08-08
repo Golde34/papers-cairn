@@ -2,6 +2,14 @@ import 'package:drift/drift.dart';
 
 enum ReadingStatus { toRead, reading, done, dropped }
 
+/// Whether a row is a paper or just a document you keep.
+///
+/// The table serves both. A paper has an abstract, authors and often an arXiv
+/// id; a lecture handout, a manual or a book has a title and a file and nothing
+/// else, and showing it with an empty author line and a blank abstract makes it
+/// look broken rather than plain. Same storage, same reader, different labels.
+enum EntryKind { paper, document }
+
 class Papers extends Table {
   IntColumn get id => integer().autoIncrement()();
 
@@ -31,6 +39,10 @@ class Papers extends Table {
   /// Null means the PDF has not been downloaded. Relative because iOS moves the
   /// app container on every update.
   TextColumn get relativePath => text().nullable()();
+
+  /// Defaults to paper, which is what everything already stored is.
+  TextColumn get kind =>
+      textEnum<EntryKind>().withDefault(const Constant('paper'))();
 
   TextColumn get status =>
       textEnum<ReadingStatus>().withDefault(const Constant('toRead'))();

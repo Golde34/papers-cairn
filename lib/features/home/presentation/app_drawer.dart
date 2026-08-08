@@ -83,6 +83,15 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.folder_open_outlined),
+            title: const Text('Files'),
+            subtitle: const Text('Everything stored on this device'),
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/files');
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.settings_outlined),
             title: const Text('Settings'),
             onTap: () {

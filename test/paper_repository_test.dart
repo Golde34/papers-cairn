@@ -106,6 +106,36 @@ void main() {
     });
   });
 
+  group('adoptExisting', () {
+    test('claims the file where it already is, as a document', () async {
+      final paper = await repository.adoptExisting(
+        relativePath: 'papers/9/handout.pdf',
+        title: 'Lecture 3 handout',
+      );
+
+      expect(paper.relativePath, 'papers/9/handout.pdf');
+      expect(paper.kind, EntryKind.document);
+      // Nothing was invented on its behalf.
+      expect(paper.authors, isEmpty);
+      expect(paper.arxivId, isNull);
+    });
+  });
+
+  group('forgetFile', () {
+    test('drops the path and keeps everything else', () async {
+      final paper = await repository.adoptExisting(
+        relativePath: 'papers/9/gone.pdf',
+        title: 'Gone',
+      );
+
+      await repository.forgetFile(paper.id);
+      final after = await repository.watchById(paper.id).first;
+
+      expect(after?.relativePath, isNull);
+      expect(after?.title, 'Gone');
+    });
+  });
+
   group('watchUnfiled', () {
     test('lists only papers belonging to no project', () async {
       final filed = await addPaper('Filed');

@@ -83,10 +83,30 @@ class _Body extends ConsumerWidget {
       children: [
         Text(paper.title, style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 8),
-        Text(
-          paper.authors,
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-        ),
+        if (paper.authors.isNotEmpty)
+          Text(
+            paper.authors,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          )
+        else if (paper.kind == EntryKind.document)
+          Row(
+            children: [
+              Icon(
+                Icons.description_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Document',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
         const SizedBox(height: 4),
         Text(
           [
@@ -110,11 +130,15 @@ class _Body extends ConsumerWidget {
         _ProjectsSection(paper: paper),
         const Divider(height: 32),
         _RelationsSection(paper: paper),
-        const Divider(height: 32),
-        _Section(
-          title: 'Abstract',
-          child: Text(paper.abstractText, style: const TextStyle(height: 1.4)),
-        ),
+        // A document has no abstract and is not waiting for one. An empty
+        // heading is worse than no heading.
+        if (paper.abstractText.isNotEmpty) ...[
+          const Divider(height: 32),
+          _Section(
+            title: 'Abstract',
+            child: Text(paper.abstractText, style: const TextStyle(height: 1.4)),
+          ),
+        ],
       ],
     );
   }

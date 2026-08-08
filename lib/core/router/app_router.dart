@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/boards/presentation/board_screen.dart';
+import '../../features/files/presentation/files_screen.dart';
 import '../../features/home/presentation/home_screen.dart';
 import '../../features/papers/presentation/paper_detail_screen.dart';
 import '../../features/papers/presentation/search_screen.dart';
@@ -13,6 +14,7 @@ final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
     GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
+    GoRoute(path: '/files', builder: (_, _) => const FilesScreen()),
     GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
     GoRoute(
       path: '/paper/:id',

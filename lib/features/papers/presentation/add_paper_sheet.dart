@@ -7,39 +7,77 @@ import '../../../core/database/database.dart';
 import '../../../core/network/arxiv_api.dart';
 import '../data/paper_repository.dart';
 
-/// Asks what an imported PDF should be called.
+/// What an import turned into: a title, and whether it is a paper or a plain
+/// document.
+typedef ImportChoice = ({String title, EntryKind kind});
+
+/// Asks what an imported PDF should be called, and what it is.
 ///
 /// A file name is the only clue a PDF carries, so it seeds the field rather than
 /// becoming the title outright — filenames are rarely what you would call a paper.
-Future<String?> showImportTitleDialog(
+///
+/// The paper-or-document choice is asked here because this is the only moment
+/// anyone knows the answer. A lecture handout and a preprint are the same bytes;
+/// only the person importing can say which one this is.
+Future<ImportChoice?> showImportTitleDialog(
   BuildContext context,
   String suggestion,
 ) async {
   // Disposed in a finally: a controller created for a dialog outlives it
   // otherwise, and this one is created afresh every time the dialog opens.
   final controller = TextEditingController(text: suggestion);
+  var kind = EntryKind.paper;
   try {
-    return await showDialog<String>(
+    return await showDialog<ImportChoice>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('What is this paper called?'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLines: null,
-          textCapitalization: TextCapitalization.sentences,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: const Text('What is this?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLines: null,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(labelText: 'Title'),
+              ),
+              const SizedBox(height: 16),
+              SegmentedButton<EntryKind>(
+                segments: const [
+                  ButtonSegment(
+                    value: EntryKind.paper,
+                    label: Text('Paper'),
+                    icon: Icon(Icons.article_outlined),
+                  ),
+                  ButtonSegment(
+                    value: EntryKind.document,
+                    label: Text('Document'),
+                    icon: Icon(Icons.description_outlined),
+                  ),
+                ],
+                selected: {kind},
+                onSelectionChanged: (selected) =>
+                    setDialogState(() => kind = selected.first),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop((
+                title: controller.text.trim(),
+                kind: kind,
+              )),
+              child: const Text('Import'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(controller.text.trim()),
-            child: const Text('Import'),
-          ),
-        ],
       ),
     );
   } finally {
