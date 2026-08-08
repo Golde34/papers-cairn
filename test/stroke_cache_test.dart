@@ -19,6 +19,8 @@ final _dark = ColorScheme.fromSeed(
 );
 
 void main() {
+  _hitTests();
+
   group('StrokeCache', () {
     test('builds each stroke once', () {
       final cache = StrokeCache();
@@ -85,6 +87,37 @@ void main() {
       cache.sync([_stroke(1, colorValue: 0xFFF9A825)], _light);
 
       expect(cache.drawn.single.paint.color.toARGB32(), 0xFFF9A825);
+    });
+  });
+}
+
+void _hitTests() {
+  group('strokeHits', () {
+    // A long diagonal. Its bounding box covers a lot of board the line itself
+    // never crosses, which is exactly what a box test would get wrong.
+    final diagonal = [const Offset(0, 0), const Offset(100, 100)];
+
+    test('hits a point sitting on the line', () {
+      expect(strokeHits(diagonal, const Offset(50, 50), 4), isTrue);
+    });
+
+    test('misses a point inside the bounding box but off the line', () {
+      expect(strokeHits(diagonal, const Offset(90, 10), 4), isFalse);
+    });
+
+    test('respects the tolerance either side', () {
+      expect(strokeHits(diagonal, const Offset(52, 50), 4), isTrue);
+      expect(strokeHits(diagonal, const Offset(80, 50), 4), isFalse);
+    });
+
+    test('handles a dot, which is two identical points', () {
+      final dot = [const Offset(10, 10), const Offset(10, 10)];
+      expect(strokeHits(dot, const Offset(11, 11), 4), isTrue);
+      expect(strokeHits(dot, const Offset(40, 40), 4), isFalse);
+    });
+
+    test('is false for a stroke with no segments', () {
+      expect(strokeHits([const Offset(0, 0)], const Offset(0, 0), 4), isFalse);
     });
   });
 }

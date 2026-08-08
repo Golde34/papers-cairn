@@ -7,11 +7,13 @@ import '../../features/papers/presentation/paper_detail_screen.dart';
 import '../../features/papers/presentation/search_screen.dart';
 import '../../features/projects/presentation/project_detail_screen.dart';
 import '../../features/reader/presentation/reader_screen.dart';
+import '../../features/settings/presentation/settings_screen.dart';
 
 final appRouter = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
     GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
+    GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
     GoRoute(
       path: '/paper/:id',
       builder: (_, state) =>

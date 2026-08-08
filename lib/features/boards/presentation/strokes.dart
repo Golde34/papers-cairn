@@ -43,6 +43,7 @@ Path buildStrokePath(List<Offset> points) {
 class DrawnStroke {
   DrawnStroke({
     required this.id,
+    required this.colorValue,
     required this.points,
     required this.path,
     required this.paint,
@@ -52,6 +53,7 @@ class DrawnStroke {
     final points = decodePoints(stroke.pointsJson);
     return DrawnStroke(
       id: stroke.id,
+      colorValue: stroke.colorValue,
       points: points,
       path: buildStrokePath(points),
       paint: Paint()
@@ -65,6 +67,12 @@ class DrawnStroke {
   }
 
   final int id;
+
+  /// The colour as stored, before the theme had its say. Kept because painting
+  /// is not the only thing a stroke is for: an export has to know that ink was
+  /// left to follow the theme rather than told to be this particular near-white.
+  final int colorValue;
+
   final List<Offset> points;
   final Path path;
   final Paint paint;
@@ -116,4 +124,83 @@ class StrokeCache {
     builds++;
     return DrawnStroke.from(stroke, scheme);
   }
+}
+
+/// The stroke currently under the finger.
+///
+/// A [ChangeNotifier] rather than widget state: a pointer move should repaint
+/// the ink and nothing else. Calling setState per move rebuilt the whole screen
+/// — toolbar, app bar and all — for every sample the touchscreen reported.
+class LiveStroke extends ChangeNotifier {
+  final List<Offset> points = [];
+
+  /// Extended segment by segment as the finger moves. Rebuilding the whole path
+  /// from every point on each frame makes a stroke cost time proportional to its
+  /// own length, so long lines get visibly slower the longer they get.
+  Path path = Path();
+
+  bool get isActive => points.isNotEmpty;
+
+  void start(Offset point) {
+    points
+      ..clear()
+      ..add(point);
+    path = Path()..moveTo(point.dx, point.dy);
+    notifyListeners();
+  }
+
+  /// [minGap] is in board units, so it has to come from the caller: the same
+  /// screen distance is a different board distance at every zoom level.
+  void extend(Offset point, double minGap) {
+    final last = points.last;
+    // A touchscreen reports far more samples than the line needs. Dropping the
+    // ones a fraction of a pixel apart costs nothing visible and keeps the path
+    // short.
+    if ((point - last).distance < minGap) return;
+
+    points.add(point);
+    if (points.length >= 3) {
+      final previous = points[points.length - 2];
+      final midpoint = (previous + point) / 2;
+      path.quadraticBezierTo(previous.dx, previous.dy, midpoint.dx, midpoint.dy);
+    } else {
+      path.lineTo(point.dx, point.dy);
+    }
+    notifyListeners();
+  }
+
+  List<Offset> take() {
+    final taken = List<Offset>.of(points);
+    points.clear();
+    path = Path();
+    notifyListeners();
+    return taken;
+  }
+}
+
+/// Whether [probe] falls within [tolerance] of the line through [points].
+///
+/// Used by the eraser, which has to decide what a fingertip landed on. Testing
+/// the bounding box instead would erase strokes the finger never touched — a
+/// long diagonal covers a lot of board it does not actually cross.
+bool strokeHits(List<Offset> points, Offset probe, double tolerance) {
+  for (var i = 0; i < points.length - 1; i++) {
+    if (_distanceToSegment(probe, points[i], points[i + 1]) <= tolerance) {
+      return true;
+    }
+  }
+  return false;
+}
+
+double _distanceToSegment(Offset p, Offset a, Offset b) {
+  final dx = b.dx - a.dx;
+  final dy = b.dy - a.dy;
+  final lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared == 0) return (p - a).distance;
+
+  final t = (((p.dx - a.dx) * dx + (p.dy - a.dy) * dy) / lengthSquared).clamp(
+    0.0,
+    1.0,
+  );
+  return (p - Offset(a.dx + t * dx, a.dy + t * dy)).distance;
 }

@@ -2,7 +2,6 @@ import 'package:cairn/core/database/database.dart';
 import 'package:cairn/core/network/arxiv_api.dart';
 import 'package:cairn/core/storage/file_service.dart';
 import 'package:cairn/features/papers/data/paper_repository.dart';
-import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 

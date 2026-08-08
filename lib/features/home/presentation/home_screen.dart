@@ -13,6 +13,7 @@ import '../../papers/data/paper_repository.dart';
 import '../../papers/presentation/add_paper_sheet.dart';
 import '../../papers/presentation/widgets/paper_tile.dart';
 import '../../projects/presentation/projects_tab.dart';
+import 'app_drawer.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -141,6 +142,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             onPressed: () => context.push('/search'),
           ),
         ],
+      ),
+      drawer: AppDrawer(
+        tab: _tab,
+        onTab: (index) => setState(() => _tab = index),
       ),
       body: IndexedStack(
         index: _tab,

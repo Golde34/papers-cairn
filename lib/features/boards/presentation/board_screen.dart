@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,81 +6,12 @@ import '../../../core/database/database.dart';
 import '../../papers/data/paper_repository.dart';
 import '../data/board_repository.dart';
 import 'board_background.dart';
-import 'strokes.dart';
 import 'board_items.dart';
-
-enum BoardTool { pan, pen, eraser }
-
-/// Mid-toned on purpose — these have to read against both a white board and a
-/// near-black one.
-const _penColorValues = <int>[
-  defaultInkColorValue,
-  0xFFF9A825,
-  0xFF43A047,
-  0xFF1E88E5,
-  0xFFD81B60,
-];
-
-const _penWidths = <double>[2, 5, 12];
-
-const _toolbarHeight = 56.0;
-
-/// The stroke currently under the finger.
-///
-/// A [ChangeNotifier] rather than widget state: a pointer move should repaint
-/// the ink and nothing else. Calling setState per move rebuilt the whole screen
-/// — toolbar, app bar and all — for every sample the touchscreen reported.
-class _LiveStroke extends ChangeNotifier {
-  final List<Offset> points = [];
-
-  /// Extended segment by segment as the finger moves. Rebuilding the whole path
-  /// from every point on each frame makes a stroke cost time proportional to
-  /// its own length, so long lines get visibly slower the longer they get.
-  Path path = Path();
-
-  bool get isActive => points.isNotEmpty;
-
-  void start(Offset point) {
-    points
-      ..clear()
-      ..add(point);
-    path = Path()..moveTo(point.dx, point.dy);
-    notifyListeners();
-  }
-
-  /// [minGap] is in board units, so it has to come from the caller: the same
-  /// screen distance is a different board distance at every zoom level.
-  void extend(Offset point, double minGap) {
-    final last = points.last;
-    // A touchscreen reports far more samples than the line needs. Dropping the
-    // ones a fraction of a pixel apart costs nothing visible and keeps the path
-    // short.
-    if ((point - last).distance < minGap) return;
-
-    points.add(point);
-    if (points.length >= 3) {
-      final previous = points[points.length - 2];
-      final midpoint = (previous + point) / 2;
-      path.quadraticBezierTo(
-        previous.dx,
-        previous.dy,
-        midpoint.dx,
-        midpoint.dy,
-      );
-    } else {
-      path.lineTo(point.dx, point.dy);
-    }
-    notifyListeners();
-  }
-
-  List<Offset> take() {
-    final taken = List<Offset>.of(points);
-    points.clear();
-    path = Path();
-    notifyListeners();
-    return taken;
-  }
-}
+import 'board_painters.dart';
+import 'board_toolbar.dart';
+import 'ink_capture.dart';
+import 'ink_review_sheet.dart';
+import 'strokes.dart';
 
 class BoardScreen extends ConsumerStatefulWidget {
   const BoardScreen({super.key, required this.boardId});
@@ -95,16 +24,21 @@ class BoardScreen extends ConsumerStatefulWidget {
 
 class _BoardScreenState extends ConsumerState<BoardScreen> {
   final _transform = TransformationController();
-  final _live = _LiveStroke();
+  final _live = LiveStroke();
 
   /// Opens on the hand, not the pen. Notes and pinned papers only take taps
   /// while a drawing tool is down, so starting in pen mode meant everything on
   /// the board looked interactive and answered nothing.
   BoardTool _tool = BoardTool.pan;
-  int _colorValue = _penColorValues[0];
-  double _width = _penWidths[1];
+  int _colorValue = penColorValues[0];
+  double _width = penWidths[1];
   bool _centred = false;
   Size _viewport = Size.zero;
+
+  /// Where the selection drag began, and the box it has reached, both in board
+  /// coordinates so they survive a zoom.
+  Offset? _selectAnchor;
+  Rect? _selection;
 
   final _strokes = StrokeCache();
 
@@ -144,6 +78,11 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         _live.start(point);
       case BoardTool.eraser:
         _eraseAt(point);
+      case BoardTool.select:
+        setState(() {
+          _selectAnchor = point;
+          _selection = null;
+        });
     }
   }
 
@@ -156,17 +95,31 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
         if (_live.isActive) _live.extend(point, _minSampleGap);
       case BoardTool.eraser:
         _eraseAt(point);
+      case BoardTool.select:
+        final anchor = _selectAnchor;
+        if (anchor != null) {
+          setState(() => _selection = Rect.fromPoints(anchor, point));
+        }
     }
+  }
+
+  /// Board units to screen pixels. Guarded against zero because dividing by the
+  /// zoom is the whole reason anything asks for it.
+  double get _scale {
+    final scale = _transform.value.getMaxScaleOnAxis();
+    return scale <= 0 ? 1 : scale;
   }
 
   /// Roughly one and a half screen pixels, expressed in board units at the
   /// current zoom.
-  double get _minSampleGap {
-    final scale = _transform.value.getMaxScaleOnAxis();
-    return scale <= 0 ? 1.5 : 1.5 / scale;
-  }
+  double get _minSampleGap => 1.5 / _scale;
+
+  /// Smaller than this, in board units, and the drag was a tap that missed.
+  /// Capturing on every stray touch would open the sheet constantly.
+  static const _minSelection = 24.0;
 
   Future<void> _onPointerUp(PointerUpEvent event) async {
+    if (_tool == BoardTool.select) return _finishSelection();
     if (!_live.isActive) return;
     final points = _live.take();
 
@@ -180,6 +133,36 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
           colorValue: _colorValue,
           width: _width,
         );
+  }
+
+  /// Turns the box just dragged into an image of whatever it caught.
+  ///
+  /// The box itself is thrown away either way: it marked what to capture, and
+  /// leaving it on the board afterwards only invites you to wonder whether it
+  /// still means something.
+  Future<void> _finishSelection() async {
+    final selection = _selection;
+    setState(() {
+      _selectAnchor = null;
+      _selection = null;
+    });
+
+    if (selection == null ||
+        selection.width < _minSelection ||
+        selection.height < _minSelection) {
+      return;
+    }
+
+    final png = await captureInkPng(_strokes.drawn, selection);
+    if (!mounted) return;
+
+    if (png == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No ink inside that box.')),
+      );
+      return;
+    }
+    await showInkReviewSheet(context, png);
   }
 
   /// New items land in the middle of what you are looking at, which is where
@@ -345,7 +328,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
   void _eraseAt(Offset point) {
     // Newest first: the stroke on top is the one the eye expects to lose.
     for (final stroke in _strokes.drawn.reversed) {
-      if (_hits(stroke.points, point, stroke.width / 2 + 8)) {
+      if (strokeHits(stroke.points, point, stroke.width / 2 + 8)) {
         ref
             .read(boardRepositoryProvider)
             .deleteStroke(stroke.id, widget.boardId);
@@ -436,7 +419,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                   children: [
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _BackgroundPainter(
+                        painter: BoardBackgroundPainter(
                           transform: _transform,
                           viewport: _viewport,
                           color: scheme.onSurfaceVariant.withValues(alpha: 0.35),
@@ -446,14 +429,24 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
                     ),
                     Positioned.fill(
                       child: CustomPaint(
-                        painter: _StrokesPainter(_strokes.drawn),
-                        foregroundPainter: _LivePainter(
+                        painter: StrokesPainter(_strokes.drawn),
+                        foregroundPainter: LiveStrokePainter(
                           live: _live,
                           color: resolveInk(_colorValue, scheme),
                           width: _width,
                         ),
                       ),
                     ),
+                    if (_selection != null)
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: SelectionPainter(
+                            selection: _selection,
+                            color: scheme.primary,
+                            strokeScale: 1 / _scale,
+                          ),
+                        ),
+                      ),
                     // Notes and cards stop swallowing touches while a drawing
                     // tool is up, so you can scribble straight across them.
                     IgnorePointer(
@@ -490,7 +483,7 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
           );
         },
       ),
-      bottomNavigationBar: _Toolbar(
+      bottomNavigationBar: BoardToolbar(
         tool: _tool,
         colorValue: _colorValue,
         width: _width,
@@ -505,290 +498,6 @@ class _BoardScreenState extends ConsumerState<BoardScreen> {
           _width = width;
           _tool = BoardTool.pen;
         }),
-      ),
-    );
-  }
-}
-
-bool _hits(List<Offset> points, Offset probe, double tolerance) {
-  for (var i = 0; i < points.length - 1; i++) {
-    if (_distanceToSegment(probe, points[i], points[i + 1]) <= tolerance) {
-      return true;
-    }
-  }
-  return false;
-}
-
-double _distanceToSegment(Offset p, Offset a, Offset b) {
-  final dx = b.dx - a.dx;
-  final dy = b.dy - a.dy;
-  final lengthSquared = dx * dx + dy * dy;
-  if (lengthSquared == 0) return (p - a).distance;
-
-  final t = (((p.dx - a.dx) * dx + (p.dy - a.dy) * dy) / lengthSquared).clamp(
-    0.0,
-    1.0,
-  );
-  return (p - Offset(a.dx + t * dx, a.dy + t * dy)).distance;
-}
-
-/// The ruling that gives an otherwise featureless canvas a sense of place.
-///
-/// Only the part actually on screen is drawn. The board is fifty thousand units
-/// square, so covering all of it would mean millions of marks for the handful
-/// anyone can see.
-class _BackgroundPainter extends CustomPainter {
-  _BackgroundPainter({
-    required this.transform,
-    required this.viewport,
-    required this.color,
-    required this.style,
-  }) : super(repaint: transform);
-
-  final TransformationController transform;
-  final Size viewport;
-  final Color color;
-  final BoardBackground style;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (viewport.isEmpty || style == BoardBackground.blank) return;
-
-    final inverse = Matrix4.copy(transform.value);
-    if (inverse.invert() == 0) return;
-
-    final visible = Rect.fromPoints(
-      MatrixUtils.transformPoint(inverse, Offset.zero),
-      MatrixUtils.transformPoint(
-        inverse,
-        Offset(viewport.width, viewport.height),
-      ),
-    );
-
-    final scale = transform.value.getMaxScaleOnAxis();
-    if (scale <= 0) return;
-
-    paintBoardPattern(
-      canvas: canvas,
-      area: visible,
-      style: style,
-      color: color,
-      spacing: adaptiveSpacing(style.baseSpacing, scale),
-      // Marks stay one screen pixel wide however far in or out you are.
-      strokeScale: 1 / scale,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_BackgroundPainter old) =>
-      old.viewport != viewport || old.color != color || old.style != style;
-}
-
-class _StrokesPainter extends CustomPainter {
-  const _StrokesPainter(this.strokes);
-
-  final List<DrawnStroke> strokes;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (final stroke in strokes) {
-      canvas.drawPath(stroke.path, stroke.paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_StrokesPainter old) =>
-      !identical(old.strokes, strokes);
-}
-
-class _LivePainter extends CustomPainter {
-  _LivePainter({required this.live, required this.color, required this.width})
-    : super(repaint: live);
-
-  final _LiveStroke live;
-  final Color color;
-  final double width;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (!live.isActive) return;
-    canvas.drawPath(
-      live.path,
-      Paint()
-        ..color = color
-        ..strokeWidth = width
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..isAntiAlias = true,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_LivePainter old) =>
-      old.color != color || old.width != width || !identical(old.live, live);
-}
-
-class _Toolbar extends StatelessWidget {
-  const _Toolbar({
-    required this.tool,
-    required this.colorValue,
-    required this.width,
-    required this.onTool,
-    required this.onColor,
-    required this.onWidth,
-  });
-
-  final BoardTool tool;
-  final int colorValue;
-  final double width;
-  final void Function(BoardTool tool) onTool;
-  final void Function(int colorValue) onColor;
-  final void Function(double width) onWidth;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return SafeArea(
-      // Height is pinned. Left to size itself the row grew to fill the loose
-      // constraints a bottomNavigationBar hands down, and the controls ended up
-      // floating in the middle of the screen.
-      child: SizedBox(
-        height: _toolbarHeight,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          children: [
-            _ToolButton(
-              icon: Icons.pan_tool_outlined,
-              selected: tool == BoardTool.pan,
-              tooltip: 'Move around',
-              onTap: () => onTool(BoardTool.pan),
-            ),
-            _ToolButton(
-              icon: Icons.edit,
-              selected: tool == BoardTool.pen,
-              tooltip: 'Draw',
-              onTap: () => onTool(BoardTool.pen),
-            ),
-            _ToolButton(
-              icon: Icons.cleaning_services_outlined,
-              selected: tool == BoardTool.eraser,
-              tooltip: 'Erase',
-              onTap: () => onTool(BoardTool.eraser),
-            ),
-            _Separator(color: scheme.outlineVariant),
-            for (final option in _penColorValues)
-              Center(
-                child: GestureDetector(
-                  // Opaque, not the default deferToChild: the swatch is smaller
-                  // than a fingertip and only its painted circle would take taps.
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => onColor(option),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 5),
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: option == colorValue
-                            ? scheme.primary
-                            : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: CircleAvatar(
-                      backgroundColor: resolveInk(option, scheme),
-                      radius: 11,
-                    ),
-                  ),
-                ),
-              ),
-            _Separator(color: scheme.outlineVariant),
-            for (final option in _penWidths)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => onWidth(option),
-                child: SizedBox(
-                  width: 48,
-                  child: Center(
-                    // The nib is shown by a filled disc behind it, not by
-                    // recolouring the dot. Dark green against near-black told
-                    // you almost nothing about which size was selected.
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: option == width
-                            ? scheme.secondaryContainer
-                            : Colors.transparent,
-                      ),
-                      child: Center(
-                        child: Container(
-                          width: math.max(option * 1.6, 6),
-                          height: math.max(option * 1.6, 6),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: option == width
-                                ? scheme.onSecondaryContainer
-                                : scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Separator extends StatelessWidget {
-  const _Separator({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Container(
-      width: 1,
-      height: 24,
-      color: color,
-      margin: const EdgeInsets.symmetric(horizontal: 10),
-    ),
-  );
-}
-
-class _ToolButton extends StatelessWidget {
-  const _ToolButton({
-    required this.icon,
-    required this.selected,
-    required this.tooltip,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final bool selected;
-  final String tooltip;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Center(
-      child: IconButton(
-        tooltip: tooltip,
-        icon: Icon(icon),
-        onPressed: onTap,
-        style: IconButton.styleFrom(
-          backgroundColor: selected ? scheme.secondaryContainer : null,
-          foregroundColor: selected ? scheme.onSecondaryContainer : null,
-        ),
       ),
     );
   }
